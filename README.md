@@ -10,7 +10,7 @@ Set the PIN in **data/sources.json** using a quoted value such as **"edit_pin": 
 
     .venv/bin/python server.py --edit-pin
 
-Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize cards on a twelve-column grid. The clock stays in the top bar alongside the controls. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
+Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize cards on a twelve-column grid. The clock stays in the top bar alongside the controls. Choose the system font or one of ten locally bundled Google Fonts. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
 
 ## Connect iCloud
 
@@ -18,9 +18,9 @@ On the host, open the private configuration file with an editor.
 
     nano data/sources.json
 
-- Add each public iCloud subscription under **public_calendars** as an object with **name** and **url**. The URL may start with **webcal://**. Set **busy_only** to **true** for any calendar whose event details should be hidden.
-- For private calendars, enter your Apple Account email and an [app-specific password](https://support.apple.com/en-us/102654) in the **icloud** object. Use the command below to list calendars available to the account. Add only the calendars you want to show to **icloud.calendars**, as objects with **name** (matching the listed name exactly) and optional **busy_only**. The app only requests calendar data. Events individually marked private or confidential are also shown as “Busy.”
-- Under **album_url**, paste the Public Website URL for the [iCloud Shared Album](https://support.apple.com/en-lamr/guide/icloud/mme985ae44d8/1.0/icloud/1.0). Use the persistent Shared Album link ending in **/sharedalbum/#…**. Apple lets anyone with this link view the album. Background rotation uses the first 250 photos returned by Apple's Shared Album website. If the album is empty or the website feed is unavailable, the display can use the bundled scenic photo. The website feed is undocumented and may change.
+- Add public calendar subscriptions under **public_calendars**. Use either a bare **https://** or **webcal://** subscription URL, or an object with **url**, optional **name**, optional **color**, and optional **busy_only**. The feed supplies the name when it is omitted. Use a quoted six-digit hex color such as **"#72dfc1"**. Set **busy_only** to **true** to hide event details.
+- For private calendars, enter your Apple Account email and an [app-specific password](https://support.apple.com/en-us/102654) in the **icloud** object. Use the command below to list calendars available to the account. Add only the calendars you want to show to **icloud.calendars**, as objects with **name** (matching the listed name exactly) and optional **color** and **busy_only**. The app only requests calendar data. Events individually marked private or confidential are also shown as “Busy.”
+- Under **album_url**, paste the Public Website URL for the [iCloud Shared Album](https://support.apple.com/en-lamr/guide/icloud/mme985ae44d8/1.0/icloud/1.0). Use the newer **photos.icloud.com/shared/album/…** link with **Anyone with the Link**, or the older **www.icloud.com/sharedalbum/#…** Public Website link. Apple lets anyone with this link view the album. Background rotation uses the first 250 photos returned by Apple's Shared Album website. If the album is empty or the website feed is unavailable, the display can use the bundled scenic photo. The website feed is undocumented and may change.
 
     .venv/bin/python server.py --list-calendars
 
@@ -29,12 +29,12 @@ Example shape for sources.json (with placeholder values):
     {
       "edit_pin": "0427",
       "public_calendars": [
-        {"name": "Community", "url": "webcal://p00-caldav.icloud.com/published/example", "busy_only": false}
+        {"name": "Community", "url": "webcal://p00-caldav.icloud.com/published/example", "busy_only": false, "color": "#72dfc1"}
       ],
       "icloud": {
         "email": "your-account@example.com",
         "app_password": "",
-        "calendars": [{"name": "Family", "busy_only": false}]
+        "calendars": [{"name": "Family", "busy_only": false, "color": "#b9adff"}]
       },
       "album_url": "https://www.icloud.com/sharedalbum/#YourAlbumToken",
       "weather": {"latitude": 40.48, "longitude": -104.90, "label": "Windsor · 80550"}

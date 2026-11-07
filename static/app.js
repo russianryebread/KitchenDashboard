@@ -10,6 +10,9 @@ const data = {};
 const due = {};
 const pending = new Map();
 const cards = {};
+const verseObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver(entries => entries.forEach(entry => fitVerse(entry.target)))
+  : null;
 const board = document.querySelector("#board");
 const headerClock = document.querySelector("#header-clock");
 const refreshButton = document.querySelector("#refresh-feeds");
@@ -256,6 +259,34 @@ function renderClock(now) {
   headerClock.appendChild(elem("span", dateFormat.format(now), "date-label"));
 }
 
+function fitVerse(body) {
+  const content = body.querySelector(".verse-content");
+  if (!content || !body.clientHeight) return;
+  let low = 10;
+  let high = 72;
+  while (low < high) {
+    const size = Math.ceil((low + high) / 2);
+    content.style.setProperty("--verse-size", size + "px");
+    if (content.getBoundingClientRect().height <= body.clientHeight) low = size;
+    else high = size - 1;
+  }
+  content.style.setProperty("--verse-size", low + "px");
+}
+
+function setBoardRows(widgets) {
+  const weights = [];
+  let remaining = 0;
+  widgets.forEach(widget => {
+    if (remaining < widget.size) {
+      weights.push(1);
+      remaining = 12;
+    }
+    remaining -= widget.size;
+    if (widget.id === "calendar") weights[weights.length - 1] = 2.6;
+  });
+  board.style.setProperty("--card-rows", weights.map(weight => "minmax(min(65px,12vh)," + weight + "fr)").join(" "));
+}
+
 function renderCard(id) {
   const card = cards[id];
   if (!card || !dayKey) return;
@@ -263,7 +294,7 @@ function renderCard(id) {
   const body = card.querySelector(".card-body");
   clear(head);
   clear(body);
-  head.appendChild(elem("h2", names[id]));
+  if (id !== "verse") head.appendChild(elem("h2", names[id]));
   if (id === "calendar") showCalendar(head, body);
   if (id === "agenda") showAgenda(body);
   if (id === "weather") showWeather(body);
@@ -276,11 +307,31 @@ function renderCard(id) {
   }
   if (id === "verse") {
     if (data.verse && data.verse.date === dayKey) {
-      body.appendChild(elem("blockquote", "“" + data.verse.text + "”", "verse-line"));
-      body.appendChild(elem("p", data.verse.reference + " · KJV", "verse-ref"));
+      const content = elem("div", undefined, "verse-content");
+      content.appendChild(elem("blockquote", "“" + data.verse.text + "”", "verse-line"));
+      content.appendChild(elem("p", data.verse.reference + " · KJV", "verse-ref"));
+      body.appendChild(content);
+      fitVerse(body);
     } else {
       body.appendChild(elem("p", "Loading today’s verse…", "empty"));
     }
+  }
+}
+
+function applyFont(name) {
+  const style = document.documentElement.style;
+  if (!name || name === "System") {
+    style.removeProperty("--board-font");
+    style.removeProperty("--verse-font");
+    return;
+  }
+  const family = JSON.stringify(name);
+  style.setProperty("--board-font", family + ", system-ui, sans-serif");
+  style.setProperty("--verse-font", family + ", Georgia, serif");
+  if (document.fonts) {
+    document.fonts.load("16px " + family).then(() => {
+      if (cards.verse) fitVerse(cards.verse.querySelector(".card-body"));
+    }).catch(() => {});
   }
 }
 
@@ -288,21 +339,26 @@ function applySettings(value) {
   const old = settings;
   if (old && JSON.stringify(old) === JSON.stringify(value)) return;
   settings = value;
+  if (!old || old.font !== value.font) applyFont(value.font);
   headerClock.hidden = !settings.widgets.some(widget => widget.id === "clock" && widget.visible);
   renderClock(new Date());
   document.body.classList.toggle("no-photo", !settings.photo);
   document.querySelector("#photo-footer").hidden = !settings.photo;
   if (!old || old.calendarView !== value.calendarView) anchor = null;
   if (!old || JSON.stringify(old.widgets) !== JSON.stringify(value.widgets)) {
+    if (verseObserver) verseObserver.disconnect();
     clear(board);
     Object.keys(cards).forEach(id => { delete cards[id]; });
-    value.widgets.filter(widget => widget.visible && widget.id !== "clock").forEach(widget => {
+    const widgets = value.widgets.filter(widget => widget.visible && widget.id !== "clock");
+    setBoardRows(widgets);
+    widgets.forEach(widget => {
       const card = document.querySelector("#card").content.firstElementChild.cloneNode(true);
       card.classList.add("card-" + widget.id);
-      if (widget.id === "weather") card.setAttribute("aria-label", names.weather);
+      if (widget.id === "weather" || widget.id === "verse") card.setAttribute("aria-label", names[widget.id]);
       card.style.setProperty("--span", widget.size);
       cards[widget.id] = card;
       board.appendChild(card);
+      if (widget.id === "verse" && verseObserver) verseObserver.observe(card.querySelector(".card-body"));
     });
   }
   if (!old || JSON.stringify(old.refresh) !== JSON.stringify(value.refresh)) {
@@ -500,7 +556,7 @@ function openEditor() {
   const clock = draft.widgets.findIndex(widget => widget.id === "clock");
   draft.widgets.unshift(draft.widgets.splice(clock, 1)[0]);
   drawEditor();
-  ["nightStart", "nightEnd", "calendarView"].forEach(name => { field(name).value = draft[name]; });
+  ["nightStart", "nightEnd", "calendarView", "font"].forEach(name => { field(name).value = draft[name]; });
   Object.keys(draft.refresh).forEach(name => { field(name).value = draft.refresh[name]; });
   field("photo").checked = draft.photo;
   field("reminders").value = draft.reminders.join("\n");
@@ -518,7 +574,7 @@ function closeEditor() {
 
 form.addEventListener("submit", event => {
   event.preventDefault();
-  ["nightStart", "nightEnd", "calendarView"].forEach(name => { draft[name] = field(name).value; });
+  ["nightStart", "nightEnd", "calendarView", "font"].forEach(name => { draft[name] = field(name).value; });
   Object.keys(draft.refresh).forEach(name => { draft.refresh[name] = Number(field(name).value); });
   draft.reminders = field("reminders").value.split("\n");
   draft.photo = field("photo").checked;

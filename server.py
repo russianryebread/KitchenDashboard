@@ -23,6 +23,8 @@ import integrations as providers
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 LAN = ip_network("192.168.1.0/24")
+FONTS = ("System", "Inter", "Manrope", "DM Sans", "Outfit", "Plus Jakarta Sans", "Lora",
+         "Merriweather", "Playfair Display", "Libre Baskerville", "Source Serif 4")
 WIDGETS = ("clock", "calendar", "agenda", "weather", "next", "reminders", "verse")
 COLORS = ("#72dfc1", "#f9c879", "#b9adff", "#8dd6ff", "#ffadbc", "#c7e48a")
 DEFAULT = {
@@ -30,7 +32,7 @@ DEFAULT = {
                 for name, size in zip(WIDGETS, (12, 7, 5, 4, 4, 4, 12))],
     "refresh": {"calendar": 5, "weather": 20, "album": 60, "rotation": 2},
     "reminders": [], "nightStart": "22:00", "nightEnd": "05:00", "calendarView": "month",
-    "photo": True,
+    "photo": True, "font": "System",
 }
 EXAMPLE = {
     "public_calendars": [],
@@ -107,6 +109,9 @@ def clean_settings(value):
     if result["calendarView"] not in ("month", "week"):
         raise ValueError("Invalid calendar view")
     result["photo"] = bool(value["photo"])
+    if value.get("font", "System") not in FONTS:
+        raise ValueError("Unsupported display font")
+    result["font"] = value.get("font", "System")
     result["reminders"] = [line.strip()[:150] for line in value["reminders"][:30] if line.strip()]
     return result
 
@@ -149,14 +154,17 @@ def calendars(config, refresh, now, force=False):
     first, last = midnight - timedelta(days=65), midnight + timedelta(days=100)
 
     def read_source(source, index, loader):
-        return providers.events_from_ics(loader(), first, last, source["name"],
-                                         COLORS[index % len(COLORS)], source.get("busy_only", False))
+        color = source.get("color", "")
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            color = COLORS[index % len(COLORS)]
+        return providers.events_from_ics(loader(), first, last, source["name"], color, source.get("busy_only", False))
 
     def read_public(source, index):
-        url = source["url"]
-        if url.startswith("webcal://"):
-            url = "https://" + url[len("webcal://"):]
-        return read_source(source, index, lambda: providers.request(url, allowed=providers.apple).decode("utf-8-sig"))
+        if isinstance(source, str):
+            source = {"url": source}
+        content = providers.subscription(source["url"])
+        label = source.get("name") or providers.calendar_name(content, "Calendar {}".format(index + 1))
+        return read_source({**source, "name": label}, index, lambda: content)
 
     key = ("calendar", json.dumps([public, account], sort_keys=True), now.date())
 
@@ -233,8 +241,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200 if value is not None else 404, value if value is not None else {"error": "Not found"})
                 return
             filename = {"": "index.html", "app.js": "app.js", "style.css": "style.css",
-                        "background.jpg": "background.jpg", "icon.svg": "icon.svg",
+                        "background.jpg": "background.jpg", "icon.svg": "icon.svg", "fonts.css": "fonts.css",
                         "icon.png": "icon.png", "manifest.webmanifest": "manifest.webmanifest"}.get(path[1:])
+            if filename is None and re.fullmatch(r"/fonts/[a-z0-9]+\.woff2", path):
+                font = ROOT / "static" / path[1:]
+                if font.is_file():
+                    self.respond(200, font.read_bytes(), "font/woff2", "public, max-age=86400")
+                    return
             if filename is None:
                 self.respond(404, {"error": "Not found"})
                 return

@@ -2,6 +2,9 @@
 import base64
 import json
 import re
+import socket
+from uuid import uuid4
+from ipaddress import ip_address
 from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.error import HTTPError
@@ -58,6 +61,33 @@ def request(url, method="GET", data=None, headers=None, allowed=None, include_ur
 
 def apple(host):
     return host.endswith(".icloud.com") or host == "icloud.com"
+
+
+def public_host(host):
+    try:
+        addresses = {ip_address(entry[4][0]) for entry in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+    except OSError:
+        return False
+    return bool(addresses) and all(address.is_global and not address.is_multicast for address in addresses)
+
+
+def subscription(url):
+    parts = urlsplit(url.strip())
+    if parts.scheme == "webcal":
+        parts = parts._replace(scheme="https")
+    raw = request(parts.geturl(), allowed=public_host).decode("utf-8-sig")
+    if not raw.lstrip().startswith("BEGIN:VCALENDAR"):
+        raise ValueError("The subscription URL did not return an iCalendar feed")
+    return raw
+
+
+def calendar_name(source, fallback):
+    unfolded = re.sub(r"\r?\n[ \t]", "", source)
+    match = re.search(r"^(?:X-WR-CALNAME|NAME)(?:;[^:\r\n]*)?:([^\r\n]+)", unfolded, re.M | re.I)
+    if not match:
+        return fallback
+    value = ical_text(match[1]).strip()
+    return value[:100] or fallback
 
 
 def calendar_date(item):
@@ -209,7 +239,10 @@ def private_ics(url, credentials, first, last):
 
 
 def shared_album(url):
-    parts = urlsplit(url)
+    parts = urlsplit(url.strip())
+    if (parts.scheme == "https" and parts.netloc == "photos.icloud.com"
+            and re.fullmatch(r"/shared/album/[A-Za-z0-9_-]{8,180}/?", parts.path)):
+        return cloudkit_album(parts.path.rstrip("/").rsplit("/", 1)[-1])
     token = parts.fragment
     if parts.scheme != "https" or not apple(parts.hostname or "") or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", token):
         raise ValueError("Expected the Public Website link for an iCloud Shared Album")
@@ -243,6 +276,78 @@ def shared_album(url):
                         and not parts.username and not parts.password):
                     urls.append(candidate)
     return urls
+
+
+def cloudkit_album(token):
+    """Read a current Apple Photos public album through its web client's CloudKit endpoints."""
+    api = "/database/1/com.apple.photos.cloud/production"
+    headers = {"Content-Type": "text/plain", "Origin": "https://photos.icloud.com",
+               "Referer": "https://photos.icloud.com/"}
+    params = {"remapEnums": "true", "getCurrentSyncToken": "true", "sharing_url_key": token,
+              "clientBuildNumber": "2640Build32", "clientMasteringNumber": "2640Build32"}
+
+    def cloudkit_host(host):
+        return re.fullmatch(r"(?:p[0-9]+-)?ckdatabasews\.icloud\.com", host) is not None
+
+    def post(base, operation, body):
+        endpoint = base + api + operation + "?" + urlencode(params)
+        result = request(endpoint, "POST", json.dumps(body).encode(), headers, cloudkit_host)
+        return json.loads(result)
+
+    result = post("https://ckdatabasews.icloud.com", "/public/records/resolve",
+                  {"shortGUIDs": [{"value": token}]})
+    album = next((item for item in result.get("results", []) if item.get("anonymousPublicAccess")), None)
+    if not album or album.get("requireAppleLogin"):
+        raise ValueError("The Shared Album must be available to anyone with the link")
+    access = album["anonymousPublicAccess"]
+    partition = urlsplit(access["databasePartition"])
+    if (partition.scheme != "https" or not cloudkit_host(partition.hostname or "")
+            or partition.port not in (None, 443) or partition.username or partition.password
+            or partition.path not in ("", "/") or partition.query or partition.fragment):
+        raise ValueError("Unexpected Apple Photos partition")
+    base = "https://" + partition.netloc
+    params["publicAccessAuthToken"] = access["token"]
+    params["clientId"] = str(uuid4())
+    urls = []
+    seen = set()
+    rank = 0
+    for _ in range(12):
+        result = post(base, "/shared/records/query", {
+            "query": {"recordType": "CPLAssetAndMasterByAddedDate", "filterBy": [
+                {"fieldName": "direction", "comparator": "EQUALS",
+                 "fieldValue": {"type": "STRING", "value": "ASCENDING"}},
+                {"fieldName": "startRank", "comparator": "EQUALS",
+                 "fieldValue": {"type": "INT64", "value": rank}}
+            ]},
+            "zoneID": album["zoneID"],
+            "resultsLimit": 100,
+        })
+        if "records" not in result:
+            raise ValueError("Apple Photos did not return album records")
+        assets = 0
+        for record in result["records"]:
+            if record.get("recordType") == "CPLAsset":
+                assets += 1
+            if record.get("recordType") != "CPLMaster" or record.get("deleted"):
+                continue
+            fields = record.get("fields", {})
+            media = fields.get("itemType", {}).get("value", "")
+            if media in ("public.movie", "public.video", "public.mpeg-4", "com.apple.quicktime-movie"):
+                continue
+            for name in ("resJPEGMedRes", "resJPEGThumbRes"):
+                url = fields.get(name, {}).get("value", {}).get("downloadURL", "")
+                location = urlsplit(url)
+                if (location.scheme == "https" and location.hostname
+                        and location.hostname.endswith(".icloud-content.com") and location.port in (None, 443)
+                        and not location.username and not location.password):
+                    if url not in seen:
+                        urls.append(url)
+                        seen.add(url)
+                    break
+        rank += assets
+        if assets < 50 or len(urls) >= 250:
+            break
+    return urls[:250]
 
 
 def weather(latitude, longitude):
