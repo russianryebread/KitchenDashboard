@@ -25,6 +25,8 @@ const dateFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "
 const keyFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
 const minutesFormat = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const monthFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric", month: "long" });
+const weekdayFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" });
+const dateDetailFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, month: "long", day: "numeric" });
 const shortFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 
 let settings;
@@ -131,7 +133,16 @@ function showCalendar(head, body) {
   const last = week ? shift(period, 6) : shift(new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + 1, 1)), -1);
   const slots = week ? 7 : Math.ceil(((last - first) / 86400000 + 1) / 7) * 7;
   const title = week ? shortFormat.format(period) + " – " + shortFormat.format(last) : monthFormat.format(period);
+  const caption = elem("div", undefined, "calendar-caption");
+  caption.appendChild(head.firstElementChild);
+  caption.appendChild(elem("p", title, "month-title"));
+  head.appendChild(caption);
   const nav = elem("div", undefined, "month-nav");
+  const current = week ? shift(today, -today.getUTCDay()) :
+    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const todayButton = button("Today", "Return to today", () => { anchor = null; renderCard("calendar"); });
+  todayButton.hidden = +current === +period;
+  nav.appendChild(todayButton);
   [-1, 1].forEach(direction => {
     const target = week ? shift(period, 7 * direction) :
       new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + direction, 1));
@@ -141,9 +152,9 @@ function showCalendar(head, body) {
     nav.appendChild(control);
   });
   head.appendChild(nav);
-  body.appendChild(elem("div", title, "month-title"));
-  const grid = elem("div", undefined, week ? "grid week" : "grid");
-  ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach(d => grid.appendChild(elem("div", d, "weekday")));
+  const grid = elem("div", undefined, week ? "grid week" : "grid month");
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  if (!week) weekdays.forEach(d => grid.appendChild(elem("div", d, "weekday")));
   const events = data.calendar ? data.calendar.data : [];
   for (let i = 0; i < slots; i++) {
     const date = shift(first, i);
@@ -151,25 +162,47 @@ function showCalendar(head, body) {
     const classes = "cell" + (key === dayKey ? " today" : "") +
       (!week && date.getUTCMonth() !== period.getUTCMonth() ? " outside" : "");
     const cell = elem("div", undefined, classes);
-    cell.appendChild(elem("span", String(date.getUTCDate()), "day-num"));
-    const matches = events.filter(event => overlaps(event, key));
+    const dateHead = elem("div", undefined, "cell-date");
+    if (week) dateHead.appendChild(elem("span", weekdays[date.getUTCDay()], "weekday"));
+    dateHead.appendChild(elem("span", String(date.getUTCDate()), "day-num"));
+    cell.appendChild(dateHead);
+    const matches = events.filter(event => overlaps(event, key))
+      .sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.start) - Date.parse(b.start));
     if (matches.length) {
-      const list = elem("div", undefined, week ? "" : "mini-events");
-      matches.slice(0, week ? 3 : 6).forEach(event => {
+      const list = elem("div", undefined, week ? "week-events" : "mini-events");
+      matches.slice(0, week ? matches.length : 6).forEach(event => {
         if (!week) {
           list.appendChild(dot(event));
-        } else {
-          const line = elem("span", event.title, "week-event");
-          line.style.setProperty("--event", event.color);
-          list.appendChild(line);
+          return;
         }
+        const entry = elem("div", undefined, "week-event");
+        entry.style.setProperty("--event", event.color);
+        const when = event.allDay ? "All day" : startKey(event) < key ? "Continues" : clockFormat.format(new Date(event.start));
+        entry.appendChild(elem("span", when, "week-time"));
+        entry.appendChild(elem("span", event.title, "week-title"));
+        entry.title = event.title;
+        list.appendChild(entry);
       });
-      if (week && matches.length > 3) list.appendChild(elem("span", "+" + (matches.length - 3) + " more", "detail"));
+      if (!week && matches.length > 6) list.appendChild(elem("span", "+" + (matches.length - 6), "month-more"));
       cell.appendChild(list);
     }
     grid.appendChild(cell);
   }
   body.appendChild(grid);
+  const sources = new Map();
+  events.forEach(event => sources.set(event.calendar, event));
+  if (sources.size) {
+    const legend = elem("div", undefined, "calendar-legend");
+    sources.forEach(event => {
+      const item = elem("span", undefined, "legend-item");
+      const swatch = dot(event);
+      swatch.removeAttribute("title");
+      item.appendChild(swatch);
+      item.appendChild(elem("span", event.calendar));
+      legend.appendChild(item);
+    });
+    body.appendChild(legend);
+  }
 }
 
 function describeWhen(event) {
@@ -189,12 +222,19 @@ function showAgenda(body) {
   const list = elem("ul", undefined, "agenda-list");
   events.forEach(event => {
     const row = elem("li", undefined, "event");
-    const details = elem("div");
-    details.appendChild(elem("strong", event.title));
-    details.appendChild(elem("span", event.calendar + (event.location ? " · " + event.location : ""), "detail"));
-    row.appendChild(dot(event));
-    row.appendChild(elem("span", describeWhen(event), "event-time"));
-    row.appendChild(details);
+    row.style.setProperty("--event", event.color);
+    const [day, time] = describeWhen(event).split(" · ");
+    const when = elem("div", undefined, "event-time");
+    when.appendChild(elem("span", day, "event-day"));
+    if (time) when.appendChild(elem("span", time));
+    const details = elem("div", undefined, "event-details");
+    const title = elem("strong", event.title);
+    title.title = event.title;
+    const metadata = event.calendar + (event.location ? " · " + event.location : "");
+    const meta = elem("span", metadata, "detail");
+    meta.title = metadata;
+    details.append(title, meta);
+    row.append(when, details);
     list.appendChild(row);
   });
   body.appendChild(list);
@@ -218,6 +258,22 @@ function degrees(value) {
   return Number.isFinite(value) ? Math.round(value) + "°" : "–";
 }
 
+function weatherIcon(code) {
+  const ns = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(ns, "svg");
+  icon.setAttribute("viewBox", "0 0 32 32");
+  icon.setAttribute("aria-hidden", "true");
+  icon.classList.add("weather-icon");
+  const sun = "M22 16a6 6 0 1 1-12 0 6 6 0 0 1 12 0ZM16 3v3m0 20v3M3 16h3m20 0h3M7 7l2 2m14 14 2 2M7 25l2-2M23 9l2-2";
+  const cloud = "M8 22a5 5 0 1 1 1-10 7 7 0 0 1 13-1 5.5 5.5 0 0 1 2 11H8Z";
+  const drops = "M10 25l-1 3m8-3-1 3m8-3-1 3";
+  const flake = "M10 26h.01m6 2h.01m6-2h.01";
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", code <= 1 ? sun : cloud + (code >= 71 && code <= 77 || code === 85 || code === 86 ? flake : code >= 50 ? drops : ""));
+  icon.appendChild(path);
+  return icon;
+}
+
 function showWeather(body) {
   const source = data.weather;
   if (!source || !source.data) {
@@ -225,11 +281,15 @@ function showWeather(body) {
     return;
   }
   const values = source.data;
-  body.appendChild(elem("p", degrees(values.temperature) + "F", "feature-value temperature"));
-  body.appendChild(elem("p", condition(values.code) + " · " + source.location, "feature-detail"));
+  const current = elem("div", undefined, "weather-current");
+  const temp = elem("p", degrees(values.temperature), "temperature");
+  temp.appendChild(elem("span", "F", "temperature-unit"));
+  current.append(temp, weatherIcon(values.code));
+  body.appendChild(current);
+  body.appendChild(elem("p", condition(values.code) + " · " + source.location.split(" · ")[0], "weather-place"));
   body.appendChild(elem("p", "H " + degrees(values.high) + " · L " + degrees(values.low) +
     (Number.isFinite(values.precipitation) ? " · " + values.precipitation + "% precip." : ""), "feature-detail"));
-  const attribution = elem("a", "Open-Meteo", "detail");
+  const attribution = elem("a", "Open-Meteo", "weather-credit");
   attribution.href = "https://open-meteo.com/";
   body.appendChild(attribution);
   addStatus(body, "weather");
@@ -245,25 +305,35 @@ function showNext(body) {
   }
   body.appendChild(elem("p", event.title, "feature-value"));
   const left = Math.ceil((Date.parse(event.start) - +now) / 60000);
-  let countdown = "";
+  const meta = elem("div", undefined, "next-meta");
+  meta.style.setProperty("--event", event.color);
   if (!event.allDay && left > 0 && left <= 180) {
-    countdown = left < 60 ? "In " + left + " min · " :
-      "In " + Math.floor(left / 60) + " hr" + (left % 60 ? " " + left % 60 + " min" : "") + " · ";
+    const countdown = left < 60 ? "In " + left + " min" :
+      "In " + Math.floor(left / 60) + " hr" + (left % 60 ? " " + left % 60 + " min" : "");
+    meta.appendChild(elem("span", countdown, "countdown"));
   }
-  body.appendChild(elem("p", countdown + describeWhen(event), "feature-detail"));
+  meta.appendChild(elem("span", describeWhen(event), "feature-detail"));
+  body.appendChild(meta);
 }
 
 function renderClock(now) {
   clear(headerClock);
-  headerClock.appendChild(elem("time", clockFormat.format(now), "clock-value"));
-  headerClock.appendChild(elem("span", dateFormat.format(now), "date-label"));
+  const time = elem("time", undefined, "clock-value");
+  time.dateTime = now.toISOString();
+  const parts = clockFormat.formatToParts(now);
+  time.appendChild(document.createTextNode(parts.filter(p => p.type !== "dayPeriod").map(p => p.value).join("").trim()));
+  const period = parts.find(p => p.type === "dayPeriod");
+  if (period) time.appendChild(elem("span", period.value, "clock-period"));
+  const date = elem("div", undefined, "date-label");
+  date.append(elem("span", weekdayFormat.format(now)), elem("span", dateDetailFormat.format(now)));
+  headerClock.append(time, date);
 }
 
 function fitVerse(body) {
   const content = body.querySelector(".verse-content");
   if (!content || !body.clientHeight) return;
   let low = 10;
-  let high = 72;
+  let high = Math.max(19, Math.min(44, Math.round(body.clientWidth * .045)));
   while (low < high) {
     const size = Math.ceil((low + high) / 2);
     content.style.setProperty("--verse-size", size + "px");
@@ -282,7 +352,8 @@ function setBoardRows(widgets) {
       remaining = 12;
     }
     remaining -= widget.size;
-    if (widget.id === "calendar") weights[weights.length - 1] = 2.6;
+    const weight = {calendar: 2.7, agenda: 2.35, verse: 1, weather: 1.2, next: 1.2, reminders: 1.2}[widget.id];
+    weights[weights.length - 1] = Math.max(weights[weights.length - 1], weight);
   });
   board.style.setProperty("--card-rows", weights.map(weight => "minmax(min(65px,12vh)," + weight + "fr)").join(" "));
 }
