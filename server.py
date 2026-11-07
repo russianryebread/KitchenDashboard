@@ -39,6 +39,10 @@ EXAMPLE = {
     "weather": {"latitude": 40.48, "longitude": -104.90, "label": "Windsor · 80550"},
 }
 STATE_LOCK = threading.Lock()
+PIN_LOCK = threading.Lock()
+PIN_FAILURES = {}
+PIN_MAX_ATTEMPTS = 5
+PIN_WINDOW_SECONDS = 60
 CACHE_LOCK = threading.Lock()
 CACHE = {}
 PROVIDER_LOCKS = {}
@@ -64,10 +68,13 @@ def save(path, value):
 def initialize():
     DATA.mkdir(mode=0o700, exist_ok=True)
     os.chmod(str(DATA), 0o700)
-    for name, value in (("sources.json", EXAMPLE), ("admin.json", {"key": secrets.token_urlsafe(24)})):
-        path = DATA / name
-        if not path.exists():
-            save(path, value)
+    sources = DATA / "sources.json"
+    if not sources.exists():
+        save(sources, EXAMPLE)
+    admin = DATA / "admin.json"
+    pin = read(admin, {}).get("key", "")
+    if not re.fullmatch(r"[0-9]{4}", pin):
+        save(admin, {"key": "{:04d}".format(secrets.randbelow(10000))})
 
 
 def settings():
@@ -261,9 +268,26 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Origin") != "http://" + self.headers.get("Host", ""):
             self.respond(403, {"error": "Open settings directly from the dashboard."})
             return
-        key = read(DATA / "admin.json", {})["key"]
-        if not hmac.compare_digest(self.headers.get("X-Edit-Key", "").encode("utf-8"), key.encode("utf-8")):
-            self.respond(403, {"error": "The edit key is incorrect."})
+        pin = read(DATA / "admin.json", {})["key"]
+        candidate = self.headers.get("X-Edit-Key", "")
+        client = self.client_address[0]
+        with PIN_LOCK:
+            now = time.monotonic()
+            failures, reset = PIN_FAILURES.get(client, (0, now + PIN_WINDOW_SECONDS))
+            if now >= reset:
+                failures, reset = 0, now + PIN_WINDOW_SECONDS
+            if failures >= PIN_MAX_ATTEMPTS:
+                status = 429
+            elif re.fullmatch(r"[0-9]{4}", candidate) and hmac.compare_digest(candidate, pin):
+                PIN_FAILURES.pop(client, None)
+                status = 200
+            else:
+                PIN_FAILURES[client] = (failures + 1, reset)
+                status = 403
+        if status != 200:
+            error = ("Too many incorrect PINs. Try again in a minute." if status == 429 else
+                     "The edit PIN is incorrect.")
+            self.respond(status, {"error": error})
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
@@ -288,13 +312,13 @@ def main():
     cli.add_argument("--bind", default="192.168.1.184")
     cli.add_argument("--port", type=int, default=8765)
     cli.add_argument("--list-calendars", action="store_true")
-    cli.add_argument("--edit-key", action="store_true")
+    cli.add_argument("--edit-pin", "--edit-key", action="store_true")
     cli.add_argument("--init", action="store_true")
     args = cli.parse_args()
     initialize()
     if args.init:
         return
-    if args.edit_key:
+    if args.edit_pin:
         print(read(DATA / "admin.json", {})["key"])
         return
     if args.list_calendars:

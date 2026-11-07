@@ -2,15 +2,15 @@
 
 The wallboard runs on the home network at **http://192.168.1.184:8765/**. Open it in Safari on the iPad in landscape. In Safari, use Share → Add to Home Screen and turn on Open as Web App if offered. For a dedicated display, you can also set up Guided Access and choose a display auto-lock setting.
 
-The live dashboard includes weather for 80550, a month or week calendar, a seven-day agenda, Next Up, household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. The dim clock-only display defaults to 10 p.m.–5 a.m. Night preview and Show dashboard override the mode for five minutes.
+The live dashboard includes weather for 80550, a month or week calendar, a seven-day agenda, Next Up, household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. The dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode. Show dashboard overrides the night schedule for five minutes.
 
 ## Customize
 
-Run the following in this directory on the host to show the local edit key.
+Run the following in this directory on the host to show the local four-digit edit PIN.
 
-    .venv/bin/python server.py --edit-key
+    .venv/bin/python server.py --edit-pin
 
-Choose **Customize** in the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize each card on a twelve-column grid. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit key authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
+Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize each card on a twelve-column grid. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
 
 ## Connect iCloud
 
@@ -39,7 +39,7 @@ Example shape for sources.json (with placeholder values):
       "weather": {"latitude": 40.48, "longitude": -104.90, "label": "Windsor · 80550"}
     }
 
-Source settings are reread as feeds refresh, so no restart is needed. Configuration, the edit key, and layout settings stay in **data/**, which is ignored by Git. The display is read-only without the edit key. The server accepts connections on the host's 192.168.1.184 address from its 192.168.1.0/24 home subnet. Devices on that subnet can read what's on the wall display. Keep the host address reserved on the router and use the app on your trusted home network.
+Source settings are reread as feeds refresh, so no restart is needed. Configuration, the edit PIN, and layout settings stay in **data/**, which is ignored by Git. The display is read-only without the edit PIN. The server accepts connections on the host's 192.168.1.184 address from its 192.168.1.0/24 home subnet. Devices on that subnet can read what's on the wall display. Keep the host address reserved on the router and use the app on your trusted home network.
 
 ## Host operation
 

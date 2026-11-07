@@ -294,6 +294,7 @@ function applySettings(value) {
     value.widgets.filter(widget => widget.visible).forEach(widget => {
       const card = document.querySelector("#card").content.firstElementChild.cloneNode(true);
       card.classList.add("card-" + widget.id);
+      if (widget.id === "weather") card.setAttribute("aria-label", names.weather);
       card.style.setProperty("--span", widget.size);
       cards[widget.id] = card;
       board.appendChild(card);

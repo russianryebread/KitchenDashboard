@@ -17,11 +17,14 @@
   <div id="scenery" aria-hidden="true"></div>
   <div id="day">
     <header class="top">
-      <div class="brand"><span class="brand-icon">⌂</span><span>HOME<span class="subbrand"> / WALLBOARD</span></span></div>
       <div class="top-actions">
         <span id="connection" role="status" hidden>Connection interrupted</span>
-        <button id="preview-night" title="Preview night mode">Night preview</button>
-        <button id="open-settings">Customize</button>
+        <button class="icon-button" id="preview-night" aria-label="Preview night mode" title="Preview night mode">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 15.2A9 9 0 0 1 8.8 3.2a9 9 0 1 0 12 12Z"/></svg>
+        </button>
+        <button class="icon-button" id="open-settings" aria-label="Customize" title="Customize">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h6m4 0h6M4 12h10m4 0h2M4 17h3m4 0h9"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+        </button>
       </div>
     </header>
     <main id="board" aria-label="Household dashboard"></main>
@@ -48,7 +51,7 @@
           <label class="check"><input name="photo" type="checkbox"> Show photo background</label>
         </div>
         <label>Household reminders <small>One per line</small><textarea name="reminders" rows="4" placeholder="Put recycling out Tuesday night"></textarea></label>
-        <label>Display edit key<input name="key" type="password" autocomplete="off" required></label>
+        <label>Four-digit edit PIN<input name="key" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
         <p id="save-status" role="status"></p>
         <div class="edit-actions"><button id="cancel-settings" type="button">Cancel</button><button id="save-settings" type="submit">Save changes</button></div>
       </form>
