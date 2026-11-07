@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import integrations as providers
 
@@ -69,12 +69,19 @@ def initialize():
     DATA.mkdir(mode=0o700, exist_ok=True)
     os.chmod(str(DATA), 0o700)
     sources = DATA / "sources.json"
-    if not sources.exists():
-        save(sources, EXAMPLE)
-    admin = DATA / "admin.json"
-    pin = read(admin, {}).get("key", "")
-    if not re.fullmatch(r"[0-9]{4}", pin):
-        save(admin, {"key": "{:04d}".format(secrets.randbelow(10000))})
+    config = read(sources, dict(EXAMPLE))
+    if "edit_pin" not in config:
+        old_pin = read(DATA / "admin.json", {}).get("key", "")
+        config["edit_pin"] = old_pin if valid_pin(old_pin) else "{:04d}".format(secrets.randbelow(10000))
+        save(sources, config)
+
+
+def valid_pin(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9]{4}", value) is not None
+
+
+def configured_pin():
+    return read(DATA / "sources.json", {}).get("edit_pin")
 
 
 def settings():
@@ -104,34 +111,35 @@ def clean_settings(value):
     return result
 
 
-def cached(key, minutes, fetch, empty):
+def cached(key, minutes, fetch, empty, force=False):
     with CACHE_LOCK:
         lock = PROVIDER_LOCKS.setdefault(key[0], threading.Lock())
     with lock:
         now = time.monotonic()
         with CACHE_LOCK:
             old = CACHE.get(key)
-        if old and old[0] > now:
-            return old[1]
+        if old:
+            fetched_at, result = old
+            ttl = minutes * 60 if result["status"] == "ok" else min(minutes * 60, 60)
+            if now - fetched_at < (min(ttl, 10) if force else ttl):
+                return result
         try:
             result = {"data": fetch(), "status": "ok"}
-            ttl = minutes * 60
         except Exception as error:
             # Provider errors can contain credentials or private URLs.
             print("{} refresh failed ({})".format(key[0], type(error).__name__), file=sys.stderr, flush=True)
             has_last = old and old[1]["status"] in ("ok", "stale")
             result = {"data": old[1]["data"] if has_last else empty,
                       "status": "stale" if has_last else "unavailable"}
-            ttl = min(minutes * 60, 60)
         with CACHE_LOCK:
             for obsolete in list(CACHE):
                 if obsolete != key and obsolete[0] == key[0]:
                     del CACHE[obsolete]
-            CACHE[key] = (time.monotonic() + ttl, result)
+            CACHE[key] = (time.monotonic(), result)
         return result
 
 
-def calendars(config, refresh, now):
+def calendars(config, refresh, now, force=False):
     public = config.get("public_calendars", [])
     account = config.get("icloud", {})
     selected = account.get("calendars", [])
@@ -182,7 +190,7 @@ def calendars(config, refresh, now):
             raise ValueError("No calendar could be read")
         return {"events": sorted(events, key=lambda event: event["start"]), "partial": failed > 0}
 
-    result = cached(key, refresh, collect, {"events": [], "partial": False})
+    result = cached(key, refresh, collect, {"events": [], "partial": False}, force)
     return {"data": result["data"]["events"],
             "status": "partial" if result["status"] == "ok" and result["data"]["partial"] else result["status"]}
 
@@ -216,10 +224,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.allowed():
             return
-        path = urlsplit(self.path).path
+        url = urlsplit(self.path)
+        path = url.path
         try:
             if path.startswith("/api/"):
-                value = self.api(path[5:])
+                force = parse_qs(url.query).get("refresh") == ["1"]
+                value = self.api(path[5:], force)
                 self.respond(200 if value is not None else 404, value if value is not None else {"error": "Not found"})
                 return
             filename = {"": "index.html", "app.js": "app.js", "style.css": "style.css",
@@ -237,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
             print("Request failed ({})".format(type(error).__name__), file=sys.stderr, flush=True)
             self.respond(500, {"error": "Dashboard data could not be loaded."})
 
-    def api(self, name):
+    def api(self, name, force=False):
         if name == "settings":
             return settings()
         now = datetime.now(providers.ZONE)
@@ -247,17 +257,17 @@ class Handler(BaseHTTPRequestHandler):
         config = read(DATA / "sources.json", EXAMPLE)
         refresh = settings()["refresh"]
         if name == "calendar":
-            return calendars(config, refresh["calendar"], now)
+            return calendars(config, refresh["calendar"], now, force)
         if name == "weather":
             location = config.get("weather", EXAMPLE["weather"])
             key = ("weather", location["latitude"], location["longitude"])
-            result = cached(key, refresh["weather"], lambda: providers.weather(*key[1:]), None)
+            result = cached(key, refresh["weather"], lambda: providers.weather(*key[1:]), None, force)
             return {**result, "location": location["label"]}
         if name == "album":
             url = config.get("album_url")
             if not url:
                 return {"data": [], "status": "setup"}
-            return cached(("album", url), refresh["album"], lambda: providers.shared_album(url), [])
+            return cached(("album", url), refresh["album"], lambda: providers.shared_album(url), [], force)
 
     def do_POST(self):
         if not self.allowed():
@@ -268,7 +278,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Origin") != "http://" + self.headers.get("Host", ""):
             self.respond(403, {"error": "Open settings directly from the dashboard."})
             return
-        pin = read(DATA / "admin.json", {})["key"]
+        pin = configured_pin()
+        if not valid_pin(pin):
+            self.respond(503, {"error": "Set edit_pin to a quoted four-digit PIN in sources.json on the host."})
+            return
         candidate = self.headers.get("X-Edit-Key", "")
         client = self.client_address[0]
         with PIN_LOCK:
@@ -278,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
                 failures, reset = 0, now + PIN_WINDOW_SECONDS
             if failures >= PIN_MAX_ATTEMPTS:
                 status = 429
-            elif re.fullmatch(r"[0-9]{4}", candidate) and hmac.compare_digest(candidate, pin):
+            elif valid_pin(candidate) and hmac.compare_digest(candidate, pin):
                 PIN_FAILURES.pop(client, None)
                 status = 200
             else:
@@ -319,7 +332,10 @@ def main():
     if args.init:
         return
     if args.edit_pin:
-        print(read(DATA / "admin.json", {})["key"])
+        pin = configured_pin()
+        if not valid_pin(pin):
+            cli.exit(1, "Set edit_pin to a quoted four-digit PIN in data/sources.json.\n")
+        print(pin)
         return
     if args.list_calendars:
         try:

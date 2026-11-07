@@ -19,14 +19,23 @@ body { color: var(--paper); background: #10201f; isolation: isolate; }
 }
 body.no-photo #scenery { background-image: radial-gradient(ellipse at 20% 10%, #31534a, #10201f 72%); }
 body.night #scenery { display: none; }
-#day { width: min(100%,1600px); margin: auto; padding: 19px clamp(15px,3vw,54px) 12px; padding-top: max(19px,env(safe-area-inset-top)); }
-.top, .top-actions, footer { display: flex; align-items: center; }
-footer { justify-content: space-between; }
-.top { justify-content: flex-end; margin-bottom: 6px; }
-.top-actions { gap: 5px; }
-.top-actions .icon-button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--paper); }
+#day {
+  display: flex; flex-direction: column; gap: clamp(6px,1.15vh,12px);
+  width: min(100%,1600px); height: 100vh; height: 100dvh; margin: auto;
+  padding: 7px clamp(12px,2.6vw,42px) 5px;
+  padding-top: max(7px,env(safe-area-inset-top)); padding-bottom: max(5px,env(safe-area-inset-bottom));
+}
+.top, .top-actions { display: flex; align-items: center; }
+.top { flex: none; justify-content: space-between; gap: 8px; min-height: 40px; }
+.top-actions { flex: none; gap: 5px; margin-left: auto; }
+.top-actions .icon-button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; color: var(--paper); }
 .icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-#connection { color: #ffe0a3; font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#refresh-feeds[data-state="busy"] svg { animation: spin 1.2s linear infinite; }
+#refresh-feeds[data-state="done"] { color: var(--mint); }
+#refresh-feeds[data-state="error"] { color: #ffe0a3; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #refresh-feeds[data-state="busy"] svg { animation: none; } }
 button, input, select, textarea { font: inherit; color: inherit; }
 button {
   cursor: pointer; background: #142c2b; padding: 8px 12px; border-radius: 4px;
@@ -34,21 +43,25 @@ button {
 }
 button:hover, button:focus-visible { border-color: var(--mint); }
 button:disabled { opacity: .4; cursor: default; }
-#board { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: clamp(8px,1.15vw,18px); align-items: stretch; }
-.card { grid-column: span var(--span); min-width: 0; border: 1px solid var(--border); border-radius: 5px; background: var(--card); padding: 12px clamp(10px,1.4vw,24px); }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+#board {
+  flex: 1; min-height: 0; overflow: auto; display: grid;
+  grid-template-columns: repeat(12,minmax(0,1fr)); grid-auto-rows: minmax(min(65px,12vh),auto);
+  gap: clamp(6px,1.05vh,14px) clamp(8px,1.15vw,18px);
+}
+.card { grid-column: span var(--span); min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 5px; background: var(--card); padding: 12px clamp(10px,1.4vw,24px); }
+.card-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .card-head h2, .eyebrow { color: var(--mint); font-size: 11px; font-weight: 720; letter-spacing: .15em; text-transform: uppercase; margin: 0; }
 .card-clock { background: transparent; border: 0; padding: 0 0 4px; }
-.card-clock .card-head, .card-weather .card-head { display: none; }
-.clock-line { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
-.clock-value { font-size: clamp(42px,6.7vw,108px); line-height: .95; letter-spacing: -.07em; font-weight: 630; font-variant-numeric: tabular-nums; }
-.date-label { font-size: clamp(14px,1.85vw,26px); text-shadow: 0 1px 7px #0d1c1c; }
+.card-clock .card-head, .card-weather .card-head { flex: none; display: none; }
+.clock-line { display: flex; gap: 2px clamp(6px,1.5vw,16px); align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.clock-value { font-size: clamp(29px,min(6.7vw,10vh),100px); line-height: .95; letter-spacing: -.07em; font-weight: 630; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.date-label { font-size: clamp(12px,1.85vw,26px); text-shadow: 0 1px 7px #0d1c1c; }
 .month-nav { display: flex; gap: 4px; }
 .month-nav button { padding: 3px 9px; min-height: 30px; }
 .month-title { font-size: clamp(15px,1.7vw,25px); font-weight: 660; margin-bottom: 7px; }
-.grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 3px; }
+.grid { flex: 1; display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); grid-template-rows: auto; grid-auto-rows: minmax(min-content,1fr); gap: 3px; }
 .weekday { text-align: center; color: var(--muted); padding: 3px 0; font-size: 10px; letter-spacing: .04em; }
-.cell { min-width: 0; min-height: clamp(24px,4.15vh,57px); background: rgba(225,255,240,.045); border-radius: 2px; padding: 4px; border: 1px solid transparent; }
+.cell { min-width: 0; min-height: clamp(21px,3.5vh,48px); background: rgba(225,255,240,.045); border-radius: 2px; padding: 4px; border: 1px solid transparent; }
 .cell.outside { opacity: .42; }
 .cell.today { border-color: var(--mint); background: #21483e; }
 .cell .day-num { font-size: clamp(11px,1.28vw,18px); display: block; font-weight: 670; }
@@ -56,7 +69,7 @@ button:disabled { opacity: .4; cursor: default; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--event); display: inline-block; flex: none; }
 .week .cell { min-height: 124px; }
 .week-event { display: block; color: var(--event); font-size: 11px; line-height: 1.2; margin-top: 6px; overflow-wrap: anywhere; }
-.agenda-list { list-style: none; margin: 0; padding: 0; max-height: 29vh; overflow: auto; }
+.agenda-list { list-style: none; margin: 0; padding: 0; max-height: 35vh; overflow: auto; }
 .event { display: grid; grid-template-columns: 7px minmax(66px,auto) minmax(0,1fr); gap: 8px; align-items: baseline; border-top: 1px solid rgba(255,255,255,.1); padding: 7px 0; }
 .event:first-child { border-top: 0; padding-top: 0; }
 .event-time, .detail, .empty { font-size: 12px; color: var(--muted); }
@@ -67,12 +80,12 @@ button:disabled { opacity: .4; cursor: default; }
 .feature-value { font-size: clamp(17px,2.1vw,30px); font-weight: 660; margin: 0 0 4px; overflow-wrap: anywhere; }
 .feature-detail { font-size: clamp(12px,1.15vw,16px); line-height: 1.35; color: var(--muted); margin: 4px 0 0; }
 .temperature { font-size: clamp(29px,3.4vw,52px); line-height: 1; letter-spacing: -.055em; }
-.reminder-list { list-style: none; margin: 0; padding: 0; max-height: 118px; overflow: auto; }
+.reminder-list { list-style: none; margin: 0; padding: 0; max-height: 16vh; overflow: auto; }
 .reminder-list li { display: flex; gap: 9px; align-items: baseline; font-size: clamp(13px,1.35vw,19px); line-height: 1.35; margin: 3px 0; }
 .reminder-list li::before { content: "○"; color: var(--mint); }
 .verse-line { font-family: Georgia, serif; font-size: clamp(15px,1.8vw,26px); line-height: 1.22; margin: 0; }
 .verse-ref { color: var(--mint); margin: 6px 0 0; font-size: 11px; letter-spacing: .055em; }
-footer { color: #bdccc2; padding: 8px 0 0; font-size: 9px; letter-spacing: .12em; }
+footer { flex: none; color: #bdccc2; text-align: right; font-size: 9px; letter-spacing: .08em; }
 a { color: inherit; text-underline-offset: 2px; }
 #night { min-height: 100vh; display: grid; place-items: center; background: #050909; color: #738a81; text-align: center; }
 #night-date { font-size: clamp(15px,2vw,28px); letter-spacing: .13em; text-transform: uppercase; margin: 0 0 12px; }
@@ -96,11 +109,10 @@ input[type=checkbox] { accent-color: var(--mint); }
 #save-status { min-height: 18px; margin: 5px 0; font-size: 13px; color: #ffdda1; }
 @media (max-width: 650px) {
   .card { grid-column: 1/-1; }
+  #board { grid-auto-rows: auto; align-content: start; }
   .agenda-list { max-height: 240px; }
+  .clock-line { flex-direction: column; }
 }
 @media (max-height: 720px) and (min-width: 651px) {
-  #day { padding-top: 10px; }
-  .top { margin-bottom: 6px; }
   .card { padding-top: 8px; padding-bottom: 8px; }
-  .clock-value { font-size: 7.5vh; }
 }

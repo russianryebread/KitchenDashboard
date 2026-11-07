@@ -17,8 +17,13 @@
   <div id="scenery" aria-hidden="true"></div>
   <div id="day">
     <header class="top">
+      <div id="header-clock" class="clock-line" hidden></div>
       <div class="top-actions">
-        <span id="connection" role="status" hidden>Connection interrupted</span>
+        <span id="connection" class="sr-only" role="status"></span>
+        <span id="refresh-status" class="sr-only" role="status"></span>
+        <button class="icon-button" id="refresh-feeds" aria-label="Refresh dashboard" title="Refresh dashboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4v6h-6m6 0a8 8 0 1 0-.5 5"/></svg>
+        </button>
         <button class="icon-button" id="preview-night" aria-label="Preview night mode" title="Preview night mode">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 15.2A9 9 0 0 1 8.8 3.2a9 9 0 1 0 12 12Z"/></svg>
         </button>
@@ -28,7 +33,7 @@
       </div>
     </header>
     <main id="board" aria-label="Household dashboard"></main>
-    <footer><span>HOME DASHBOARD</span><span id="photo-credit"><a href="https://images.unsplash.com/photo-1470770841072-f978cf4d019e">Scenic photo · Unsplash</a></span></footer>
+    <footer id="photo-footer"><span id="photo-credit"><a href="https://images.unsplash.com/photo-1470770841072-f978cf4d019e">Scenic photo · Unsplash</a></span></footer>
   </div>
   <main id="night" hidden aria-label="Night clock">
     <div><p id="night-date"></p><div id="night-clock"></div></div>

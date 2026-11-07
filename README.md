@@ -2,15 +2,15 @@
 
 The wallboard runs on the home network at **http://192.168.1.184:8765/**. Open it in Safari on the iPad in landscape. In Safari, use Share → Add to Home Screen and turn on Open as Web App if offered. For a dedicated display, you can also set up Guided Access and choose a display auto-lock setting.
 
-The live dashboard includes weather for 80550, a month or week calendar, a seven-day agenda, Next Up, household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. The dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode. Show dashboard overrides the night schedule for five minutes.
+The live dashboard includes weather for 80550, a month or week calendar, a seven-day agenda, Next Up, household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. The dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode, and the round arrow fetches fresh dashboard data. Show dashboard overrides the night schedule for five minutes.
 
 ## Customize
 
-Run the following in this directory on the host to show the local four-digit edit PIN.
+Set the PIN in **data/sources.json** using a quoted value such as **"edit_pin": "0427"**. Quoting it preserves leading zeroes. The dashboard reads it on each save, so there is no need to restart. Run the following in this directory on the host to show the current PIN.
 
     .venv/bin/python server.py --edit-pin
 
-Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize each card on a twelve-column grid. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
+Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize cards on a twelve-column grid. The clock stays in the top bar alongside the controls. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
 
 ## Connect iCloud
 
@@ -27,6 +27,7 @@ On the host, open the private configuration file with an editor.
 Example shape for sources.json (with placeholder values):
 
     {
+      "edit_pin": "0427",
       "public_calendars": [
         {"name": "Community", "url": "webcal://p00-caldav.icloud.com/published/example", "busy_only": false}
       ],

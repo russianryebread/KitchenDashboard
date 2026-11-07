@@ -8,9 +8,12 @@ const names = {
 const labels = { calendar: "Calendar", weather: "Weather", album: "Album" };
 const data = {};
 const due = {};
-const pending = new Set();
+const pending = new Map();
 const cards = {};
 const board = document.querySelector("#board");
+const headerClock = document.querySelector("#header-clock");
+const refreshButton = document.querySelector("#refresh-feeds");
+const refreshStatus = document.querySelector("#refresh-status");
 const form = document.querySelector("#editor-form");
 const editor = document.querySelector("#editor");
 const scenery = document.querySelector("#scenery");
@@ -247,6 +250,12 @@ function showNext(body) {
   body.appendChild(elem("p", countdown + describeWhen(event), "feature-detail"));
 }
 
+function renderClock(now) {
+  clear(headerClock);
+  headerClock.appendChild(elem("time", clockFormat.format(now), "clock-value"));
+  headerClock.appendChild(elem("span", dateFormat.format(now), "date-label"));
+}
+
 function renderCard(id) {
   const card = cards[id];
   if (!card || !dayKey) return;
@@ -255,13 +264,6 @@ function renderCard(id) {
   clear(head);
   clear(body);
   head.appendChild(elem("h2", names[id]));
-  if (id === "clock") {
-    const now = new Date();
-    const line = elem("div", undefined, "clock-line");
-    line.appendChild(elem("time", clockFormat.format(now), "clock-value"));
-    line.appendChild(elem("span", dateFormat.format(now), "date-label"));
-    body.appendChild(line);
-  }
   if (id === "calendar") showCalendar(head, body);
   if (id === "agenda") showAgenda(body);
   if (id === "weather") showWeather(body);
@@ -286,12 +288,15 @@ function applySettings(value) {
   const old = settings;
   if (old && JSON.stringify(old) === JSON.stringify(value)) return;
   settings = value;
+  headerClock.hidden = !settings.widgets.some(widget => widget.id === "clock" && widget.visible);
+  renderClock(new Date());
   document.body.classList.toggle("no-photo", !settings.photo);
+  document.querySelector("#photo-footer").hidden = !settings.photo;
   if (!old || old.calendarView !== value.calendarView) anchor = null;
   if (!old || JSON.stringify(old.widgets) !== JSON.stringify(value.widgets)) {
     clear(board);
     Object.keys(cards).forEach(id => { delete cards[id]; });
-    value.widgets.filter(widget => widget.visible).forEach(widget => {
+    value.widgets.filter(widget => widget.visible && widget.id !== "clock").forEach(widget => {
       const card = document.querySelector("#card").content.firstElementChild.cloneNode(true);
       card.classList.add("card-" + widget.id);
       if (widget.id === "weather") card.setAttribute("aria-label", names.weather);
@@ -310,7 +315,6 @@ function applySettings(value) {
 
 function updatePhoto(now) {
   const credit = document.querySelector("#photo-credit");
-  credit.hidden = !settings.photo;
   if (!settings.photo || lastNight) return;
   const urls = data.album && data.album.data;
   if (!urls || !urls.length) {
@@ -345,12 +349,12 @@ function updatePhoto(now) {
   image.src = url;
 }
 
-function get(name, minutes, callback) {
-  const stamp = Date.now();
-  if ((due[name] || 0) > stamp || pending.has(name)) return;
-  pending.add(name);
+function get(name, minutes, callback, force = false) {
+  const inFlight = pending.get(name);
+  if (inFlight) return force ? inFlight.then(() => get(name, minutes, callback, true)) : inFlight;
+  if (!force && (due[name] || 0) > Date.now()) return;
   const generation = fetchGeneration;
-  fetch("/api/" + name, { cache: "no-store" })
+  const request = fetch("/api/" + name + (force ? "?refresh=1" : ""), { cache: "no-store" })
     .then(response => {
       if (!response.ok) throw new Error("Could not load " + name);
       return response.json();
@@ -359,13 +363,50 @@ function get(name, minutes, callback) {
       due[name] = (generation === fetchGeneration || name === "settings") ?
         Date.now() + ((value.status === "unavailable" || value.status === "stale") ? Math.min(minutes, 1) : minutes) * 60000 : 0;
       callback(value);
-      if (name === "settings") document.querySelector("#connection").hidden = true;
+      if (name === "settings") document.querySelector("#connection").textContent = "";
+      return !["unavailable", "stale", "partial"].includes(value.status);
     })
     .catch(() => {
       due[name] = Date.now() + 15000;
-      if (name === "settings") document.querySelector("#connection").hidden = false;
+      if (name === "settings") document.querySelector("#connection").textContent = "Connection interrupted";
+      return false;
     })
-    .then(() => pending.delete(name));
+    .then(success => {
+      pending.delete(name);
+      return success;
+    });
+  pending.set(name, request);
+  return request;
+}
+
+function refreshFeeds(force = false) {
+  const requests = [
+    get("settings", 0.2, applySettings, force),
+    get("verse", 60, value => {
+      if (value.date !== dayKey) { due.verse = 0; return; }
+      data.verse = value;
+      renderCard("verse");
+    }, force)
+  ];
+  if (!settings) return requests;
+  requests.push(
+    get("calendar", settings.refresh.calendar, value => {
+      data.calendar = value;
+      ["calendar", "agenda", "next"].forEach(renderCard);
+    }, force),
+    get("weather", settings.refresh.weather, value => {
+      data.weather = value;
+      renderCard("weather");
+    }, force)
+  );
+  if (settings.photo) {
+    requests.push(get("album", settings.refresh.album, value => {
+      data.album = value;
+      if (!photoUrl) nextPhoto = 0;
+      updatePhoto(Date.now());
+    }, force));
+  }
+  return requests;
 }
 
 function clockMode(now) {
@@ -386,12 +427,7 @@ function tick() {
     due.calendar = 0;
     if (settings) ["calendar", "agenda", "verse"].forEach(renderCard);
   }
-  get("settings", 0.2, applySettings);
-  get("verse", 60, value => {
-    if (value.date !== dayKey) { due.verse = 0; return; }
-    data.verse = value;
-    renderCard("verse");
-  });
+  refreshFeeds();
   if (!settings) return;
   const night = clockMode(now).active && editor.hidden;
   if (night !== lastNight) {
@@ -406,23 +442,10 @@ function tick() {
     lastMinute = minute;
     document.querySelector("#night-clock").textContent = clockFormat.format(now);
     document.querySelector("#night-date").textContent = dateFormat.format(now);
-    ["clock", "next", "agenda"].forEach(renderCard);
+    renderClock(now);
+    ["next", "agenda"].forEach(renderCard);
   }
-  get("calendar", settings.refresh.calendar, value => {
-    data.calendar = value;
-    ["calendar", "agenda", "next"].forEach(renderCard);
-  });
-  get("weather", settings.refresh.weather, value => {
-    data.weather = value;
-    renderCard("weather");
-  });
-  if (settings.photo) {
-    get("album", settings.refresh.album, value => {
-      data.album = value;
-      if (!photoUrl) nextPhoto = 0;
-    });
-    updatePhoto(+now);
-  }
+  updatePhoto(+now);
 }
 
 function drawEditor() {
@@ -438,6 +461,11 @@ function drawEditor() {
     label.appendChild(checkbox);
     label.appendChild(document.createTextNode(names[widget.id]));
     row.appendChild(label);
+    if (widget.id === "clock") {
+      row.appendChild(elem("span", "Top bar", "detail"));
+      list.appendChild(row);
+      return;
+    }
     const width = elem("select");
     width.setAttribute("aria-label", names[widget.id] + " width");
     for (let columns = 3; columns <= 12; columns++) {
@@ -455,7 +483,7 @@ function drawEditor() {
         draft.widgets.splice(target, 0, widget);
         drawEditor();
       });
-      control.disabled = target < 0 || target >= draft.widgets.length;
+      control.disabled = target < 1 || target >= draft.widgets.length;
       row.appendChild(control);
     });
     list.appendChild(row);
@@ -469,6 +497,8 @@ function field(name) {
 function openEditor() {
   if (!settings) return;
   draft = JSON.parse(JSON.stringify(settings));
+  const clock = draft.widgets.findIndex(widget => widget.id === "clock");
+  draft.widgets.unshift(draft.widgets.splice(clock, 1)[0]);
   drawEditor();
   ["nightStart", "nightEnd", "calendarView"].forEach(name => { field(name).value = draft[name]; });
   Object.keys(draft.refresh).forEach(name => { field(name).value = draft.refresh[name]; });
@@ -510,6 +540,24 @@ form.addEventListener("submit", event => {
     .then(() => { save.disabled = false; });
 });
 
+let refreshFeedback;
+refreshButton.onclick = async () => {
+  if (refreshButton.disabled) return;
+  clearTimeout(refreshFeedback);
+  refreshButton.disabled = true;
+  refreshButton.dataset.state = "busy";
+  refreshStatus.textContent = "Refreshing dashboard";
+  const results = await Promise.all(refreshFeeds(true));
+  const success = results.every(Boolean);
+  refreshButton.dataset.state = success ? "done" : "error";
+  refreshStatus.textContent = success ? "Dashboard refreshed" : "Some dashboard data could not refresh";
+  refreshButton.title = refreshStatus.textContent;
+  refreshButton.disabled = false;
+  refreshFeedback = setTimeout(() => {
+    delete refreshButton.dataset.state;
+    refreshButton.title = "Refresh dashboard";
+  }, 2500);
+};
 document.querySelector("#open-settings").onclick = openEditor;
 document.querySelector("#close-settings").onclick = closeEditor;
 document.querySelector("#cancel-settings").onclick = closeEditor;
