@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#10201f">
+  <title>Home · Wallboard</title>
+  <link rel="icon" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div id="scenery" aria-hidden="true"></div>
+  <div id="day">
+    <header class="top">
+      <div class="brand"><span class="brand-icon">⌂</span><span>HOME<span class="subbrand"> / WALLBOARD</span></span></div>
+      <div class="top-actions">
+        <span id="connection" role="status" hidden>Connection interrupted</span>
+        <button id="preview-night" title="Preview night mode">Night preview</button>
+        <button id="open-settings">Customize</button>
+      </div>
+    </header>
+    <main id="board" aria-label="Household dashboard"></main>
+    <footer><span>HOME DASHBOARD</span><span id="photo-credit"><a href="https://images.unsplash.com/photo-1470770841072-f978cf4d019e">Scenic photo · Unsplash</a></span></footer>
+  </div>
+  <main id="night" hidden aria-label="Night clock">
+    <div><p id="night-date"></p><div id="night-clock"></div></div>
+    <button id="exit-night">Show dashboard</button>
+  </main>
+  <div id="editor" hidden>
+    <section id="editor-panel" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+      <form id="editor-form">
+        <header class="edit-head"><div><p class="eyebrow">YOUR WALLBOARD</p><h2 id="editor-title">Customize display</h2></div><button id="close-settings" type="button" aria-label="Close settings">✕</button></header>
+        <p class="edit-copy">Set the order, size and visibility of each card. Saved changes apply to every display.</p>
+        <div id="widget-settings"></div>
+        <div class="form-grid">
+          <label>Calendar view<select name="calendarView"><option value="month">Month</option><option value="week">Week</option></select></label>
+          <label>Night starts<input name="nightStart" type="time" required></label>
+          <label>Night ends<input name="nightEnd" type="time" required></label>
+          <label>Calendar refresh (min)<input name="calendar" type="number" min="1" max="1440" required></label>
+          <label>Weather refresh (min)<input name="weather" type="number" min="1" max="1440" required></label>
+          <label>Album refresh (min)<input name="album" type="number" min="1" max="1440" required></label>
+          <label>Photo rotation (min)<input name="rotation" type="number" min="1" max="1440" required></label>
+          <label class="check"><input name="photo" type="checkbox"> Show photo background</label>
+        </div>
+        <label>Household reminders <small>One per line</small><textarea name="reminders" rows="4" placeholder="Put recycling out Tuesday night"></textarea></label>
+        <label>Display edit key<input name="key" type="password" autocomplete="off" required></label>
+        <p id="save-status" role="status"></p>
+        <div class="edit-actions"><button id="cancel-settings" type="button">Cancel</button><button id="save-settings" type="submit">Save changes</button></div>
+      </form>
+    </section>
+  </div>
+  <template id="card">
+    <section class="card"><header class="card-head"><h2></h2></header><div class="card-body"></div></section>
+  </template>
+</body>
+</html>
