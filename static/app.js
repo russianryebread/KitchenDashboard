@@ -26,6 +26,7 @@ const verseObserver = typeof ResizeObserver === "function"
   ? new ResizeObserver(entries => entries.forEach(entry => fitVerse(entry.target)))
   : null;
 const board = document.querySelector("#board");
+const eventDialog = document.querySelector("#event-detail");
 const headerClock = document.querySelector("#header-clock");
 const refreshButton = document.querySelector("#refresh-feeds");
 const refreshStatus = document.querySelector("#refresh-status");
@@ -39,6 +40,9 @@ const minutesFormat = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "
 const monthFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric", month: "long" });
 const weekdayFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" });
 const dateDetailFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, month: "long", day: "numeric" });
+const eventDateFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC", weekday: "long", month: "long", day: "numeric"
+});
 const shortFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 
 let settings;
@@ -138,6 +142,31 @@ function dot(event) {
   return node;
 }
 
+function showEventDetails(event) {
+  const start = startKey(event);
+  // All-day dates have an exclusive end, while timed events end at the actual instant shown.
+  const end = event.allDay ? utcKey(shift(calendarDay(event.end), -1)) : keyOf(new Date(event.end));
+  const firstDate = eventDateFormat.format(calendarDay(start));
+  const date = end > start ? firstDate + " – " + eventDateFormat.format(calendarDay(end)) : firstDate;
+  const time = event.allDay ? "All day" :
+    clockFormat.format(new Date(event.start)) + " – " + clockFormat.format(new Date(event.end)) + " · Mountain Time";
+  const calendar = eventDialog.querySelector("#event-detail-calendar");
+  calendar.textContent = event.calendar;
+  calendar.style.setProperty("--event", event.color);
+  eventDialog.querySelector("#event-detail-title").textContent = event.title;
+  eventDialog.querySelector("#event-detail-date").textContent = date;
+  eventDialog.querySelector("#event-detail-time").textContent = time;
+  eventDialog.querySelector("#event-detail-location").textContent = event.location || "No location listed";
+  eventDialog.showModal();
+}
+
+eventDialog.addEventListener("click", event => {
+  if (event.target !== eventDialog) return;
+  const bounds = eventDialog.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) eventDialog.close();
+});
+
 function showCalendar(head, body) {
   const week = settings.calendarView === "week";
   const today = calendarDay(dayKey);
@@ -190,12 +219,14 @@ function showCalendar(head, body) {
           list.appendChild(dot(event));
           return;
         }
-        const entry = elem("div", undefined, "week-event");
+        const entry = elem("button", undefined, "week-event");
+        entry.type = "button";
+        entry.setAttribute("aria-haspopup", "dialog");
+        entry.addEventListener("click", () => showEventDetails(event));
         entry.style.setProperty("--event", event.color);
         const when = event.allDay ? "All day" : startKey(event) < key ? "Continues" : clockFormat.format(new Date(event.start));
         entry.appendChild(elem("span", when, "week-time"));
         entry.appendChild(elem("span", event.title, "week-title"));
-        entry.title = event.title;
         list.appendChild(entry);
       });
       if (!week && matches.length > 6) list.appendChild(elem("span", "+" + (matches.length - 6), "month-more"));
@@ -763,6 +794,7 @@ function tick() {
   const night = clockMode(now).active && editor.hidden;
   if (night !== lastNight) {
     lastNight = night;
+    if (night && eventDialog.open) eventDialog.close();
     document.body.classList.toggle("night", night);
     document.querySelector("#day").hidden = night;
     document.querySelector("#night").hidden = !night;

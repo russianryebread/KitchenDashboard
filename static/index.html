@@ -11,8 +11,8 @@
   <link rel="apple-touch-icon" href="/icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/fonts.css">
-  <link rel="stylesheet" href="/style.css?v=3">
-  <script defer src="/app.js?v=3"></script>
+  <link rel="stylesheet" href="/style.css?v=4">
+  <script defer src="/app.js?v=4"></script>
 </head>
 <body>
   <div id="scenery" aria-hidden="true"></div>
@@ -77,6 +77,23 @@
       </form>
     </section>
   </div>
+  <dialog id="event-detail" aria-labelledby="event-detail-title">
+    <div class="event-detail-top">
+      <span id="event-detail-calendar"></span>
+      <form method="dialog"><button type="submit" aria-label="Close event details" autofocus>×</button></form>
+    </div>
+    <h2 id="event-detail-title"></h2>
+    <dl>
+      <div>
+        <dt>When</dt>
+        <dd><strong id="event-detail-date"></strong><span id="event-detail-time"></span></dd>
+      </div>
+      <div>
+        <dt>Where</dt>
+        <dd id="event-detail-location"></dd>
+      </div>
+    </dl>
+  </dialog>
   <template id="card">
     <section class="card"><header class="card-head"><h2></h2></header><div class="card-body"></div></section>
   </template>

@@ -336,3 +336,81 @@ body.theme-dark:not(.no-photo) #scenery { background-image: linear-gradient(#111
   .card-calendar .week .day-num { font-size: 14px; }
   .card-calendar .week .cell-date { padding-inline: 2px; }
 }
+
+.week-event {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  border-width: 0 0 0 2px;
+  text-align: left;
+}
+.week-event:hover { box-shadow: inset 0 0 0 1px currentColor; }
+.week-event:focus-visible { outline-offset: -2px; }
+
+#event-detail {
+  --detail-surface: #f6efe2;
+  --detail-ink: #26352c;
+  --detail-muted: #526052;
+  --detail-rule: #66776249;
+  --detail-control: #e8e5d8;
+  width: min(calc(100% - 24px), 29rem);
+  max-height: calc(100% - 24px);
+  padding: clamp(16px, 3vw, 28px);
+  border: 1px solid var(--detail-rule);
+  border-radius: 9px;
+  color: var(--detail-ink);
+  background: var(--detail-surface);
+  box-shadow: 0 12px 40px #0c1c1b85;
+  overflow: auto;
+}
+#event-detail::backdrop { background: #10221dc4; }
+.theme-dark #event-detail {
+  --detail-surface: #283630;
+  --detail-ink: #fff7e9;
+  --detail-muted: #cbd2c4;
+  --detail-rule: #d9ead944;
+  --detail-control: #36473d;
+}
+.event-detail-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#event-detail-calendar {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--detail-control);
+  background: color-mix(in srgb, var(--event) 24%, var(--detail-surface));
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+#event-detail-calendar::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--event); }
+.event-detail-top button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--detail-rule);
+  border-radius: 50%;
+  color: var(--detail-ink);
+  background: var(--detail-control);
+  font-size: 23px;
+  line-height: 1;
+}
+#event-detail h2 {
+  margin: 8px 0 14px;
+  font: 580 clamp(24px, 4vw, 36px)/1.1 var(--serif);
+  overflow-wrap: anywhere;
+}
+#event-detail dl { margin: 0; }
+#event-detail dl > div {
+  display: grid;
+  grid-template-columns: 3.6em minmax(0, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--detail-rule);
+  padding: 10px 0;
+}
+#event-detail dt, #event-detail-time { color: var(--detail-muted); font-size: 13px; }
+#event-detail dd { margin: 0; display: grid; gap: 3px; overflow-wrap: anywhere; white-space: pre-line; }
