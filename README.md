@@ -2,7 +2,7 @@
 
 The wallboard runs on the home network at **http://192.168.1.184:8765/**. Open it in Safari on the iPad in landscape. In Safari, use Share → Add to Home Screen and turn on Open as Web App if offered. For a dedicated display, you can also set up Guided Access and choose a display auto-lock setting.
 
-The live dashboard includes weather for 80550, a month or week calendar, a seven-day agenda, Next Up, household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. The dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode, and the round arrow fetches fresh dashboard data. Show dashboard overrides the night schedule for five minutes.
+The live dashboard includes weather for 80550, a month or week calendar, Next Up, Daylight, weekly household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. Auto appearance switches the dashboard between light and dark at the local sunrise and sunset. If daylight data is unavailable, it uses 6:30 a.m. and 6 p.m. The separate dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode, and the round arrow fetches fresh dashboard data. Show dashboard overrides the night schedule for five minutes.
 
 ## Customize
 
@@ -10,7 +10,11 @@ Set the PIN in **data/sources.json** using a quoted value such as **"edit_pin": 
 
     .venv/bin/python server.py --edit-pin
 
-Tap the sliders icon in the top-right corner to customize the dashboard. Use the arrows to reorder cards, the checkboxes to show or hide them, and the width selector to resize cards on a twelve-column grid. The clock stays in the top bar alongside the controls. Choose the system font or one of ten locally bundled Google Fonts. You can also set the night schedule and individual refresh intervals, toggle the photo background, and enter reminders (one per line). The edit PIN authorizes saves. Changes are shared with every display. On smaller screens the cards stack.
+Tap the sliders icon in the top-right corner to customize the dashboard. Add widgets from **Available widgets** or use **Hide** to return them to the library. Use the arrows and width selector under **On the dashboard** to arrange them on a twelve-column grid. The clock stays in the top bar. If equally wide Weather and Daylight cards sit immediately before Reminders and the width of the stack plus the width of Reminders fills a row, Weather and Daylight stack alongside Reminders.
+
+The library includes Coming Up, Today's schedule, Tomorrow's schedule, a three-day forecast, Photo spotlight, Countdowns, and Household note. Add dates and note text in Customize. Choose a font, set the clock-only schedule, and pick Auto, Light, or Dark appearance. Saving these changes requires the edit PIN.
+
+Use **Edit assignments** in Reminders to add chores, children, and usual assignments. Select an **Assignment week** to override the assignee for one week. Daily chores reset each day and other chores reset on Monday. Checkoffs can be made from the display and are shared with the other displays.
 
 ## Connect iCloud
 

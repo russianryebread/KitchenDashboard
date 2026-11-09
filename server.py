@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from ipaddress import ip_address, ip_network
 from pathlib import Path
@@ -25,13 +25,21 @@ DATA = ROOT / "data"
 LAN = ip_network("192.168.1.0/24")
 FONTS = ("System", "Inter", "Manrope", "DM Sans", "Outfit", "Plus Jakarta Sans", "Lora",
          "Merriweather", "Playfair Display", "Libre Baskerville", "Source Serif 4")
-WIDGETS = ("clock", "calendar", "agenda", "weather", "next", "reminders", "verse")
+WIDGET_LAYOUT = (
+    ("clock", 12, True), ("next", 12, True), ("calendar", 12, True),
+    ("weather", 4, True), ("daylight", 4, True), ("reminders", 8, True), ("verse", 12, True),
+    ("agenda", 6, False), ("today", 6, False), ("tomorrow", 6, False), ("forecast", 6, False),
+    ("spotlight", 6, False), ("countdowns", 4, False), ("notes", 4, False),
+)
+WIDGETS = tuple(item[0] for item in WIDGET_LAYOUT)
 COLORS = ("#72dfc1", "#f9c879", "#b9adff", "#8dd6ff", "#ffadbc", "#c7e48a")
+DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 DEFAULT = {
-    "widgets": [{"id": name, "size": size, "visible": True}
-                for name, size in zip(WIDGETS, (12, 7, 5, 4, 4, 4, 12))],
+    "layoutVersion": 2,
+    "widgets": [{"id": name, "size": size, "visible": visible} for name, size, visible in WIDGET_LAYOUT],
     "refresh": {"calendar": 5, "weather": 20, "album": 60, "rotation": 2},
-    "reminders": [], "nightStart": "22:00", "nightEnd": "05:00", "calendarView": "month",
+    "children": [], "chores": [], "assignments": {}, "notes": "", "countdowns": [],
+    "nightStart": "22:00", "nightEnd": "05:00", "calendarView": "week", "appearance": "auto",
     "photo": True, "font": "System",
 }
 EXAMPLE = {
@@ -87,14 +95,77 @@ def configured_pin():
 
 
 def settings():
-    return {**DEFAULT, **read(DATA / "settings.json", {})}
+    saved = read(DATA / "settings.json", {})
+    value = {**DEFAULT, **saved}
+    if saved.get("layoutVersion") != DEFAULT["layoutVersion"]:
+        value.update(layoutVersion=DEFAULT["layoutVersion"], widgets=DEFAULT["widgets"])
+    if "chores" not in saved:
+        chores = []
+        for index, title in enumerate(saved.get("reminders", [])):
+            detail = title.rsplit(" - ", 1)
+            due = next((day for day in ("Daily", *DAYS) if detail[-1].lower().startswith(day.lower())), "Weekly")
+            if len(detail) == 2 and due != "Weekly":
+                title = detail[0]
+            chores.append({"id": "legacy-{}".format(index), "title": title, "due": due, "assignee": ""})
+        value["chores"] = chores
+    value.pop("reminders", None)
+    return value
+
+
+def iso_day(value):
+    return isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) and date.fromisoformat(value)
+
+
+def clean_household(value):
+    children = list(dict.fromkeys(name.strip()[:35] for name in value.get("children", [])[:12] if name.strip()))
+    chores = []
+    for chore in value.get("chores", [])[:30]:
+        title = chore["title"].strip()[:150]
+        if not title:
+            continue
+        identifier = chore["id"]
+        if not re.fullmatch(r"[a-z0-9-]{1,48}", identifier) or any(c["id"] == identifier for c in chores):
+            raise ValueError("Invalid chore id")
+        if chore["due"] not in ("Daily", "Weekly", *DAYS):
+            raise ValueError("Invalid chore schedule")
+        chores.append({"id": identifier, "title": title, "due": chore["due"],
+                       "assignee": chore["assignee"] if chore["assignee"] in children else ""})
+    identifiers = {chore["id"] for chore in chores}
+    assignments = {}
+    for key, week in list(value.get("assignments", {}).items())[-104:]:
+        monday = iso_day(key)
+        if not monday or monday.weekday() != 0:
+            raise ValueError("Assignment weeks start on Monday")
+        valid = {identifier: child for identifier, child in week.items()
+                 if identifier in identifiers and (child == "" or child in children)}
+        if valid:
+            assignments[key] = valid
+    countdowns = []
+    for item in value.get("countdowns", [])[:12]:
+        if not iso_day(item["date"]):
+            raise ValueError("Invalid countdown date")
+        title = item["title"].strip()[:100]
+        if title:
+            countdowns.append({"date": item["date"], "title": title})
+    return {"children": children, "chores": chores, "assignments": assignments, "countdowns": countdowns,
+            "notes": value.get("notes", "").strip()[:600]}
+
+
+def chore_period(chore, today):
+    return (today if chore["due"] == "Daily" else today - timedelta(days=today.weekday())).isoformat()
+
+
+def completions(today, config, stored):
+    return {chore["id"]: {"period": chore_period(chore, today),
+                          "done": chore["id"] in stored.get(chore_period(chore, today), [])}
+            for chore in config["chores"]}
 
 
 def clean_settings(value):
     widgets = value["widgets"]
     if sorted(widget["id"] for widget in widgets) != sorted(WIDGETS):
         raise ValueError("Widget list is incomplete")
-    result = {"widgets": [{"id": widget["id"], "size": int(widget["size"]),
+    result = {"layoutVersion": DEFAULT["layoutVersion"], "widgets": [{"id": widget["id"], "size": int(widget["size"]),
                            "visible": bool(widget["visible"])} for widget in widgets]}
     if any(not 3 <= widget["size"] <= 12 for widget in result["widgets"]):
         raise ValueError("Widget widths must be between 3 and 12")
@@ -112,8 +183,10 @@ def clean_settings(value):
     if value.get("font", "System") not in FONTS:
         raise ValueError("Unsupported display font")
     result["font"] = value.get("font", "System")
-    result["reminders"] = [line.strip()[:150] for line in value["reminders"][:30] if line.strip()]
-    return result
+    result["appearance"] = value.get("appearance", "auto")
+    if result["appearance"] not in ("auto", "light", "dark"):
+        raise ValueError("Invalid appearance")
+    return {**result, **clean_household(value)}
 
 
 def cached(key, minutes, fetch, empty, force=False):
@@ -264,6 +337,8 @@ class Handler(BaseHTTPRequestHandler):
         if name == "settings":
             return settings()
         now = datetime.now(providers.ZONE)
+        if name == "chores":
+            return completions(now.date(), settings(), read(DATA / "completions.json", {}))
         if name == "verse":
             ref, verse = VERSES[(now.date().toordinal() - 1) % len(VERSES)]
             return {"reference": ref, "text": verse, "date": now.date().isoformat()}
@@ -285,11 +360,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed():
             return
-        if self.path != "/api/settings":
+        if self.path not in ("/api/settings", "/api/chores"):
             self.respond(404, {"error": "Not found"})
             return
         if self.headers.get("Origin") != "http://" + self.headers.get("Host", ""):
             self.respond(403, {"error": "Open settings directly from the dashboard."})
+            return
+        if self.path == "/api/chores":
+            self.set_chore_completion()
             return
         pin = configured_pin()
         if not valid_pin(pin):
@@ -316,16 +394,49 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(status, {"error": error})
             return
         try:
-            size = int(self.headers.get("Content-Length", "0"))
-            if not 0 < size <= 32768:
-                raise ValueError("Invalid settings size")
-            value = clean_settings(json.loads(self.rfile.read(size).decode("utf-8")))
+            value = clean_settings(self.read_json(65536))
         except (ValueError, TypeError, KeyError, AttributeError):
-            self.respond(400, {"error": "Check widget widths, refresh rates and night times."})
+            self.respond(400, {"error": "Check widget sizes, reminder settings, refresh rates, and countdown dates."})
             return
         with STATE_LOCK:
             save(DATA / "settings.json", value)
         self.respond(200, value)
+
+
+    def read_json(self, limit):
+        size = int(self.headers.get("Content-Length", "0"))
+        if not 0 < size <= limit:
+            raise ValueError("Invalid request size")
+        return json.loads(self.rfile.read(size).decode("utf-8"))
+
+    def set_chore_completion(self):
+        try:
+            change = self.read_json(1024)
+            identifier, period, done = change["id"], change["period"], change["done"]
+            if not isinstance(identifier, str) or not isinstance(period, str) or not isinstance(done, bool):
+                raise ValueError("Invalid completion")
+        except (ValueError, KeyError, TypeError):
+            self.respond(400, {"error": "Invalid reminder update."})
+            return
+        with STATE_LOCK:
+            today = datetime.now(providers.ZONE).date()
+            config = settings()
+            chore = next((chore for chore in config["chores"] if chore["id"] == identifier), None)
+            if not chore or chore_period(chore, today) != period:
+                self.respond(409, {"error": "The reminder list changed. Refresh and try again."})
+                return
+            path = DATA / "completions.json"
+            oldest = (today - timedelta(days=45)).isoformat()
+            stored = {key: values for key, values in read(path, {}).items() if key >= oldest}
+            checked = set(stored.get(period, []))
+            if done:
+                checked.add(identifier)
+            else:
+                checked.discard(identifier)
+            stored[period] = sorted(checked)
+            save(path, stored)
+            result = completions(today, config, stored)
+        self.respond(200, result)
 
 
 class Server(ThreadingMixIn, HTTPServer):

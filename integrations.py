@@ -353,9 +353,13 @@ def cloudkit_album(token):
 def weather(latitude, longitude):
     query = urlencode({"latitude": latitude, "longitude": longitude,
                        "current": "temperature_2m,weather_code",
-                       "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-                       "temperature_unit": "fahrenheit", "timezone": "America/Denver", "forecast_days": 1})
+                       "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset",
+                       "temperature_unit": "fahrenheit", "timezone": "America/Denver", "forecast_days": 3})
     result = json.loads(request("https://api.open-meteo.com/v1/forecast?" + query).decode())
-    return {"temperature": result["current"]["temperature_2m"], "code": result["current"]["weather_code"],
-            "high": result["daily"]["temperature_2m_max"][0], "low": result["daily"]["temperature_2m_min"][0],
-            "precipitation": result["daily"]["precipitation_probability_max"][0]}
+    daily = result["daily"]
+    forecast = [{"date": day, "code": daily["weather_code"][i], "high": daily["temperature_2m_max"][i],
+                 "low": daily["temperature_2m_min"][i], "precipitation": daily["precipitation_probability_max"][i],
+                 "sunrise": daily["sunrise"][i], "sunset": daily["sunset"][i]}
+                for i, day in enumerate(daily["time"])]
+    return {**forecast[0], "temperature": result["current"]["temperature_2m"],
+            "code": result["current"]["weather_code"], "forecast": forecast}

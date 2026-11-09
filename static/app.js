@@ -3,8 +3,20 @@
 const zone = "America/Denver";
 const names = {
   clock: "Clock", calendar: "Calendar", agenda: "Coming up",
-  weather: "Weather", next: "Next up", reminders: "Reminders", verse: "Verse of the day"
+  weather: "Weather", next: "Next up", reminders: "Reminders", verse: "Verse of the day",
+  daylight: "Daylight", today: "Today’s schedule", tomorrow: "Tomorrow’s schedule", forecast: "Three-day forecast",
+  spotlight: "Photo spotlight", countdowns: "Countdowns", notes: "Household note"
 };
+const widgetDetails = {
+  clock: "Time and date in the top bar", next: "The next calendar event in a slim strip",
+  calendar: "A color-coded week or month", weather: "Current conditions and today’s outlook",
+  daylight: "Local sunrise and sunset", reminders: "Chores, assignments and checkboxes",
+  verse: "A KJV verse that changes at midnight", agenda: "The next seven days in a list",
+  today: "The remaining events today", tomorrow: "A heads-up for tomorrow",
+  forecast: "Highs, lows and rain chances", spotlight: "A rotating photo from your album",
+  countdowns: "Days until your own dates", notes: "A message for the household"
+};
+const choreDays = ["Daily", "Weekly", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const labels = { calendar: "Calendar", weather: "Weather", album: "Album" };
 const data = {};
 const due = {};
@@ -41,6 +53,9 @@ let photoVersion = 0;
 let nextPhoto = 0;
 let photoUrl = "";
 let fetchGeneration = 0;
+let assignmentWeek = "";
+let reminderNotice = "";
+let completionSaving = false;
 
 function elem(tag, text, cls) {
   const node = document.createElement(tag);
@@ -134,7 +149,6 @@ function showCalendar(head, body) {
   const slots = week ? 7 : Math.ceil(((last - first) / 86400000 + 1) / 7) * 7;
   const title = week ? shortFormat.format(period) + " – " + shortFormat.format(last) : monthFormat.format(period);
   const caption = elem("div", undefined, "calendar-caption");
-  caption.appendChild(head.firstElementChild);
   caption.appendChild(elem("p", title, "month-title"));
   head.appendChild(caption);
   const nav = elem("div", undefined, "month-nav");
@@ -163,8 +177,9 @@ function showCalendar(head, body) {
       (!week && date.getUTCMonth() !== period.getUTCMonth() ? " outside" : "");
     const cell = elem("div", undefined, classes);
     const dateHead = elem("div", undefined, "cell-date");
-    if (week) dateHead.appendChild(elem("span", weekdays[date.getUTCDay()], "weekday"));
     dateHead.appendChild(elem("span", String(date.getUTCDate()), "day-num"));
+    if (week) dateHead.appendChild(elem("span", weekdays[date.getUTCDay()], "weekday"));
+    if (key === dayKey) dateHead.setAttribute("aria-current", "date");
     cell.appendChild(dateHead);
     const matches = events.filter(event => overlaps(event, key))
       .sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.start) - Date.parse(b.start));
@@ -284,14 +299,22 @@ function showWeather(body) {
   const current = elem("div", undefined, "weather-current");
   const temp = elem("p", degrees(values.temperature), "temperature");
   temp.appendChild(elem("span", "F", "temperature-unit"));
-  current.append(temp, weatherIcon(values.code));
-  body.appendChild(current);
-  body.appendChild(elem("p", condition(values.code) + " · " + source.location.split(" · ")[0], "weather-place"));
-  body.appendChild(elem("p", "H " + degrees(values.high) + " · L " + degrees(values.low) +
-    (Number.isFinite(values.precipitation) ? " · " + values.precipitation + "% precip." : ""), "feature-detail"));
+  const place = elem("p", undefined, "weather-place");
+  place.append(weatherIcon(values.code), document.createTextNode(condition(values.code) + " · " + source.location.split(" · ")[0]));
+  current.append(temp, place);
+  const details = elem("dl", undefined, "weather-details");
+  const metrics = [["High / low", degrees(values.high) + " / " + degrees(values.low)],
+                   ["Precipitation", Number.isFinite(values.precipitation) ? values.precipitation + "%" : "–"]];
+  metrics.forEach(([label, value]) => {
+    const row = elem("div");
+    row.append(elem("dt", label), elem("dd", value));
+    details.appendChild(row);
+  });
+  const reading = elem("div", undefined, "weather-reading");
+  reading.append(current, details);
   const attribution = elem("a", "Open-Meteo", "weather-credit");
   attribution.href = "https://open-meteo.com/";
-  body.appendChild(attribution);
+  body.append(reading, attribution);
   addStatus(body, "weather");
 }
 
@@ -314,6 +337,135 @@ function showNext(body) {
   }
   meta.appendChild(elem("span", describeWhen(event), "feature-detail"));
   body.appendChild(meta);
+}
+
+function forecastDays() {
+  return (data.weather && data.weather.data && data.weather.data.forecast) || [];
+}
+
+function sunTimes() {
+  return forecastDays().find(day => day.date === dayKey);
+}
+
+function showDaylight(body) {
+  const sun = sunTimes();
+  if (!sun || !sun.sunrise || !sun.sunset) {
+    body.appendChild(elem("p", "Sunrise and sunset are unavailable.", "empty"));
+    return;
+  }
+  const line = elem("div", undefined, "daylight-times");
+  [["Sunrise", sun.sunrise], ["Sunset", sun.sunset]].forEach(([label, date]) => {
+    const parts = date.slice(11, 16).split(":").map(Number);
+    const time = (parts[0] % 12 || 12) + ":" + String(parts[1]).padStart(2, "0") + (parts[0] < 12 ? " AM" : " PM");
+    const pair = elem("span", undefined, "daylight-pair");
+    pair.append(elem("span", label, "detail"), elem("strong", time));
+    line.appendChild(pair);
+  });
+  body.appendChild(line);
+}
+
+function showForecast(body) {
+  const days = forecastDays().filter(day => day.date >= dayKey);
+  if (!days.length) { addStatus(body, "weather"); return; }
+  const list = elem("ul", undefined, "widget-list");
+  days.forEach(day => {
+    const line = elem("li");
+    const label = day.date === dayKey ? "Today" : shortFormat.format(calendarDay(day.date));
+    line.append(elem("strong", label), elem("span", condition(day.code) + " · " + degrees(day.high) + " / " +
+      degrees(day.low) + (Number.isFinite(day.precipitation) ? " · " + day.precipitation + "% rain/snow" : ""), "detail"));
+    list.appendChild(line);
+  });
+  body.appendChild(list);
+}
+
+function showDaySchedule(body, offset) {
+  const key = utcKey(shift(calendarDay(dayKey), offset));
+  const events = currentEvents(new Date()).filter(event => overlaps(event, key));
+  const list = elem("ul", undefined, "widget-list");
+  events.forEach(event => {
+    const line = elem("li");
+    line.append(dot(event), elem("strong", event.title), elem("span", event.allDay ? "All day" :
+      startKey(event) < key ? "Ongoing" : clockFormat.format(new Date(event.start)), "detail"));
+    list.appendChild(line);
+  });
+  if (!events.length && data.calendar && data.calendar.status === "ok") body.appendChild(elem("p", "Nothing scheduled.", "empty"));
+  body.appendChild(list);
+  addStatus(body, "calendar");
+}
+
+function showCountdowns(body) {
+  const list = elem("ul", undefined, "widget-list");
+  settings.countdowns.filter(item => item.date >= dayKey).sort((a, b) => a.date.localeCompare(b.date)).forEach(item => {
+    const days = Math.round((calendarDay(item.date) - calendarDay(dayKey)) / 86400000);
+    const row = elem("li");
+    row.append(elem("strong", item.title), elem("span", days === 0 ? "Today" : days + (days === 1 ? " day" : " days"), "detail"));
+    list.appendChild(row);
+  });
+  if (!list.children.length) body.appendChild(elem("p", "Add a future date in Customize.", "empty"));
+  body.appendChild(list);
+}
+
+function monday(key, offset = 0) {
+  const date = calendarDay(key);
+  return utcKey(shift(date, -((date.getUTCDay() + 6) % 7) + 7 * offset));
+}
+
+function assignedChild(config, chore, week) {
+  const overrides = config.assignments[week] || {};
+  return Object.prototype.hasOwnProperty.call(overrides, chore.id) ? overrides[chore.id] : chore.assignee;
+}
+
+function showReminders(head, body) {
+  head.appendChild(button("Edit assignments", "Edit reminders and weekly assignments", () => openEditor("chores")));
+  if (!settings.chores.length) {
+    body.appendChild(elem("p", "Add chores and assign them in Edit assignments.", "empty"));
+    return;
+  }
+  const list = elem("div", undefined, "chore-list");
+  const header = elem("div", undefined, "chore-row chore-labels");
+  ["Chore", "Due", "Assigned to"].forEach(label => header.appendChild(elem("span", label)));
+  list.appendChild(header);
+  const current = monday(dayKey);
+  settings.chores.forEach(chore => {
+    const row = elem("div", undefined, "chore-row");
+    const label = elem("label");
+    const check = elem("input");
+    check.type = "checkbox";
+    const item = data.chores && data.chores[chore.id];
+    check.checked = Boolean(item && item.done);
+    check.disabled = !item || completionSaving;
+    check.onchange = async () => {
+      completionSaving = true;
+      reminderNotice = "";
+      renderCard("reminders");
+      try {
+        const response = await fetch("/api/chores", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({id: chore.id, period: item.period, done: check.checked})});
+        if (!response.ok) throw new Error();
+        data.chores = await response.json();
+        due.chores = 0;
+      } catch (_) {
+        reminderNotice = "Could not save. Refresh and try again.";
+        due.chores = 0;
+      } finally {
+        completionSaving = false;
+        renderCard("reminders");
+      }
+    };
+    label.append(check, elem("span", chore.title));
+    row.append(label, elem("span", chore.due, "detail"),
+      elem("span", assignedChild(settings, chore, current) || "Unassigned", "chore-child"));
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+  if (reminderNotice) body.appendChild(elem("p", reminderNotice, "status-note"));
+}
+
+function showSpotlight(body) {
+  const img = elem("img");
+  img.alt = photoUrl ? "Photo from the shared album" : "Scenic landscape";
+  img.src = photoUrl || "/background.jpg";
+  body.appendChild(img);
 }
 
 function renderClock(now) {
@@ -343,19 +495,37 @@ function fitVerse(body) {
   content.style.setProperty("--verse-size", low + "px");
 }
 
+function packWidgets(widgets) {
+  const packed = [];
+  for (let i = 0; i < widgets.length; i++) {
+    const [weather, daylight, reminders] = widgets.slice(i, i + 3);
+    if (weather.id === "weather" && daylight && daylight.id === "daylight" && daylight.size === weather.size
+        && reminders && reminders.id === "reminders" && weather.size + reminders.size === 12) {
+      packed.push({id: "stack", size: weather.size, children: [weather, daylight]});
+      i++;
+    } else {
+      packed.push(weather);
+    }
+  }
+  return packed;
+}
+
 function setBoardRows(widgets) {
   const weights = [];
   let remaining = 0;
   widgets.forEach(widget => {
     if (remaining < widget.size) {
-      weights.push(1);
+      weights.push({weight: 0, compact: false, stack: false});
       remaining = 12;
     }
     remaining -= widget.size;
-    const weight = {calendar: 2.7, agenda: 2.35, verse: 1, weather: 1.2, next: 1.2, reminders: 1.2}[widget.id];
-    weights[weights.length - 1] = Math.max(weights[weights.length - 1], weight);
+    const row = weights[weights.length - 1];
+    row.compact = widget.id === "next" && widget.size === 12;
+    row.stack = row.stack || widget.id === "stack";
+    row.weight = Math.max(row.weight, {calendar: 2.8, agenda: 2, stack: 1.5, reminders: 1.5, verse: .8}[widget.id] || 1);
   });
-  board.style.setProperty("--card-rows", weights.map(weight => "minmax(min(65px,12vh)," + weight + "fr)").join(" "));
+  board.style.setProperty("--card-rows", weights.map(row => row.compact ? "auto" :
+    "minmax(" + (row.stack ? "148px" : "min(72px,13vh)") + "," + row.weight + "fr)").join(" "));
 }
 
 function renderCard(id) {
@@ -365,17 +535,18 @@ function renderCard(id) {
   const body = card.querySelector(".card-body");
   clear(head);
   clear(body);
-  if (id !== "verse") head.appendChild(elem("h2", names[id]));
+  if (!["verse", "calendar", "weather"].includes(id)) head.appendChild(elem("h2", names[id]));
   if (id === "calendar") showCalendar(head, body);
   if (id === "agenda") showAgenda(body);
   if (id === "weather") showWeather(body);
   if (id === "next") showNext(body);
-  if (id === "reminders") {
-    const list = elem("ul", undefined, "reminder-list");
-    settings.reminders.forEach(note => list.appendChild(elem("li", note)));
-    if (!settings.reminders.length) body.appendChild(elem("p", "Add household reminders in Customize.", "empty"));
-    body.appendChild(list);
-  }
+  if (id === "reminders") showReminders(head, body);
+  if (id === "daylight") showDaylight(body);
+  if (id === "forecast") showForecast(body);
+  if (id === "today" || id === "tomorrow") showDaySchedule(body, id === "today" ? 0 : 1);
+  if (id === "spotlight") showSpotlight(body);
+  if (id === "countdowns") showCountdowns(body);
+  if (id === "notes") body.appendChild(elem("p", settings.notes || "Add a household note in Customize.", "house-note"));
   if (id === "verse") {
     if (data.verse && data.verse.date === dayKey) {
       const content = elem("div", undefined, "verse-content");
@@ -410,6 +581,8 @@ function applySettings(value) {
   const old = settings;
   if (old && JSON.stringify(old) === JSON.stringify(value)) return;
   settings = value;
+  applyAppearance(new Date());
+  due.chores = 0;
   if (!old || old.font !== value.font) applyFont(value.font);
   headerClock.hidden = !settings.widgets.some(widget => widget.id === "clock" && widget.visible);
   renderClock(new Date());
@@ -421,15 +594,24 @@ function applySettings(value) {
     clear(board);
     Object.keys(cards).forEach(id => { delete cards[id]; });
     const widgets = value.widgets.filter(widget => widget.visible && widget.id !== "clock");
-    setBoardRows(widgets);
-    widgets.forEach(widget => {
+    const packed = packWidgets(widgets);
+    setBoardRows(packed);
+    const createCard = (widget, container) => {
       const card = document.querySelector("#card").content.firstElementChild.cloneNode(true);
       card.classList.add("card-" + widget.id);
-      if (widget.id === "weather" || widget.id === "verse") card.setAttribute("aria-label", names[widget.id]);
+      if (widget.size === 12) card.classList.add("full-width");
+      if (["weather", "verse", "calendar"].includes(widget.id)) card.setAttribute("aria-label", names[widget.id]);
       card.style.setProperty("--span", widget.size);
       cards[widget.id] = card;
-      board.appendChild(card);
+      container.appendChild(card);
       if (widget.id === "verse" && verseObserver) verseObserver.observe(card.querySelector(".card-body"));
+    };
+    packed.forEach(widget => {
+      if (!widget.children) { createCard(widget, board); return; }
+      const stack = elem("div", undefined, "widget-stack");
+      stack.style.setProperty("--span", widget.size);
+      board.appendChild(stack);
+      widget.children.forEach(child => createCard(child, stack));
     });
   }
   if (!old || JSON.stringify(old.refresh) !== JSON.stringify(value.refresh)) {
@@ -442,7 +624,7 @@ function applySettings(value) {
 
 function updatePhoto(now) {
   const credit = document.querySelector("#photo-credit");
-  if (!settings.photo || lastNight) return;
+  if ((!settings.photo && !cards.spotlight) || lastNight) return;
   const urls = data.album && data.album.data;
   if (!urls || !urls.length) {
     if (photoUrl) {
@@ -452,7 +634,10 @@ function updatePhoto(now) {
       clear(credit);
       credit.appendChild(link);
     }
-    photoUrl = "";
+    if (photoUrl) {
+      photoUrl = "";
+      renderCard("spotlight");
+    }
     return;
   }
   if (now < nextPhoto && photoUrl) return;
@@ -469,6 +654,7 @@ function updatePhoto(now) {
   image.onload = () => {
     if (ticket !== photoVersion) return;
     photoUrl = url;
+    renderCard("spotlight");
     scenery.style.setProperty("--photo", "url(" + JSON.stringify(url) + ")");
     document.querySelector("#photo-credit").textContent = "ICLOUD SHARED ALBUM";
   };
@@ -519,14 +705,22 @@ function refreshFeeds(force = false) {
   requests.push(
     get("calendar", settings.refresh.calendar, value => {
       data.calendar = value;
-      ["calendar", "agenda", "next"].forEach(renderCard);
+      ["calendar", "agenda", "next", "today", "tomorrow"].forEach(renderCard);
     }, force),
     get("weather", settings.refresh.weather, value => {
       data.weather = value;
-      renderCard("weather");
+      ["weather", "daylight", "forecast"].forEach(renderCard);
+      applyAppearance(new Date());
     }, force)
   );
-  if (settings.photo) {
+  if (cards.reminders && !completionSaving) {
+    requests.push(get("chores", .25, value => {
+      if (completionSaving || JSON.stringify(data.chores) === JSON.stringify(value)) return;
+      data.chores = value;
+      renderCard("reminders");
+    }, force));
+  }
+  if (settings.photo || cards.spotlight) {
     requests.push(get("album", settings.refresh.album, value => {
       data.album = value;
       if (!photoUrl) nextPhoto = 0;
@@ -534,6 +728,16 @@ function refreshFeeds(force = false) {
     }, force));
   }
   return requests;
+}
+
+function applyAppearance(now) {
+  const minutes = minutesFormat.format(now);
+  const sun = sunTimes();
+  const rise = sun && sun.sunrise ? sun.sunrise.slice(11, 16) : "06:30";
+  const set = sun && sun.sunset ? sun.sunset.slice(11, 16) : "18:00";
+  const dark = settings.appearance === "dark" ||
+    (settings.appearance === "auto" && (minutes < rise || minutes >= set));
+  document.body.classList.toggle("theme-dark", dark);
 }
 
 function clockMode(now) {
@@ -551,8 +755,8 @@ function tick() {
   if (key !== dayKey) {
     dayKey = key;
     due.verse = 0;
-    due.calendar = 0;
-    if (settings) ["calendar", "agenda", "verse"].forEach(renderCard);
+    due.calendar = due.weather = due.chores = 0;
+    if (settings) ["calendar", "agenda", "verse", "today", "tomorrow", "daylight", "countdowns", "reminders"].forEach(renderCard);
   }
   refreshFeeds();
   if (!settings) return;
@@ -570,71 +774,162 @@ function tick() {
     document.querySelector("#night-clock").textContent = clockFormat.format(now);
     document.querySelector("#night-date").textContent = dateFormat.format(now);
     renderClock(now);
-    ["next", "agenda"].forEach(renderCard);
+    applyAppearance(now);
+    ["next", "agenda", "today"].forEach(renderCard);
   }
   updatePhoto(+now);
 }
 
 function drawEditor() {
   const list = document.querySelector("#widget-settings");
+  const catalog = document.querySelector("#widget-catalog");
   clear(list);
-  draft.widgets.forEach((widget, index) => {
-    const row = elem("div", undefined, "widget-option");
-    const label = elem("label");
-    const checkbox = elem("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = widget.visible;
-    checkbox.onchange = () => { widget.visible = checkbox.checked; };
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(names[widget.id]));
+  clear(catalog);
+  const movable = draft.widgets.filter(widget => widget.visible && widget.id !== "clock");
+  draft.widgets.forEach(widget => {
+    const row = elem("div", undefined, widget.visible ? "widget-option" : "catalog-option");
+    const label = elem("div");
+    label.append(elem("strong", names[widget.id]), elem("span", widgetDetails[widget.id], "detail"));
     row.appendChild(label);
-    if (widget.id === "clock") {
-      row.appendChild(elem("span", "Top bar", "detail"));
-      list.appendChild(row);
+    if (!widget.visible) {
+      row.appendChild(button("Add", "Add " + names[widget.id], () => {
+        widget.visible = true;
+        draft.widgets.splice(draft.widgets.indexOf(widget), 1);
+        if (widget.id === "clock") draft.widgets.unshift(widget);
+        else draft.widgets.push(widget);
+        drawEditor();
+      }));
+      catalog.appendChild(row);
       return;
     }
-    const width = elem("select");
-    width.setAttribute("aria-label", names[widget.id] + " width");
-    for (let columns = 3; columns <= 12; columns++) {
-      const option = elem("option", columns === 12 ? "Full width" : columns + " / 12 width");
-      option.value = columns;
-      option.selected = columns === widget.size;
-      width.appendChild(option);
-    }
-    width.onchange = () => { widget.size = Number(width.value); };
-    row.appendChild(width);
-    [-1, 1].forEach(delta => {
-      const target = index + delta;
-      const control = button(delta < 0 ? "↑" : "↓", "Move " + names[widget.id] + (delta < 0 ? " up" : " down"), () => {
-        draft.widgets.splice(index, 1);
-        draft.widgets.splice(target, 0, widget);
-        drawEditor();
+    if (widget.id === "clock") {
+      row.appendChild(elem("span", "Top bar", "detail"));
+    } else {
+      const width = choreSelect(Array.from({length: 10}, (_, i) => [i + 3, i === 9 ? "Full width" : (i + 3) + " / 12"]),
+        widget.size, names[widget.id] + " width");
+      width.onchange = () => { widget.size = Number(width.value); };
+      row.appendChild(width);
+      const index = movable.indexOf(widget);
+      [-1, 1].forEach(delta => {
+        const target = index + delta;
+        const control = button(delta < 0 ? "↑" : "↓", "Move " + names[widget.id] + (delta < 0 ? " up" : " down"), () => {
+          const a = draft.widgets.indexOf(widget);
+          const b = draft.widgets.indexOf(movable[target]);
+          [draft.widgets[a], draft.widgets[b]] = [draft.widgets[b], draft.widgets[a]];
+          drawEditor();
+        });
+        control.disabled = target < 0 || target >= movable.length;
+        row.appendChild(control);
       });
-      control.disabled = target < 1 || target >= draft.widgets.length;
-      row.appendChild(control);
-    });
+    }
+    row.appendChild(button("Hide", "Hide " + names[widget.id], () => {
+      widget.visible = false;
+      drawEditor();
+    }));
     list.appendChild(row);
   });
+  if (!catalog.children.length) catalog.appendChild(elem("p", "All widgets are enabled.", "empty"));
+}
+
+function choreSelect(values, selected, label) {
+  const picker = elem("select");
+  picker.setAttribute("aria-label", label);
+  values.forEach(([value, name]) => {
+    const option = elem("option", name);
+    option.value = value;
+    picker.appendChild(option);
+  });
+  picker.value = selected;
+  return picker;
+}
+
+function drawChoreEditor() {
+  const list = document.querySelector("#chore-settings-list");
+  clear(list);
+  draft.chores.forEach((chore, index) => {
+    const row = elem("div", undefined, "chore-editor-row");
+    const title = elem("input");
+    title.setAttribute("aria-label", "Chore name");
+    title.placeholder = "Chore name";
+    title.maxLength = 150;
+    title.value = chore.title;
+    title.oninput = () => { chore.title = title.value; };
+    const schedule = choreSelect(choreDays.map(day => [day, day]), chore.due, "When " + (chore.title || "chore") + " is due");
+    schedule.onchange = () => { chore.due = schedule.value; };
+    const options = [["", "Unassigned"], ...draft.children.map(name => [name, name])];
+    const week = draft.assignments[assignmentWeek] || {};
+    const selected = assignmentWeek ? (Object.prototype.hasOwnProperty.call(week, chore.id) ? week[chore.id] : "@default") : chore.assignee;
+    const assigned = choreSelect(assignmentWeek ? [["@default", "Usual assignment"], ...options] : options,
+      selected, "Assign " + (chore.title || "chore"));
+    assigned.onchange = () => {
+      if (!assignmentWeek) chore.assignee = assigned.value;
+      else {
+        const overrides = draft.assignments[assignmentWeek] || (draft.assignments[assignmentWeek] = {});
+        if (assigned.value === "@default") delete overrides[chore.id];
+        else overrides[chore.id] = assigned.value;
+      }
+    };
+    const remove = button("×", "Remove " + (chore.title || "chore"), () => {
+      draft.chores.splice(index, 1);
+      drawChoreEditor();
+    });
+    row.append(title, schedule, assigned, remove);
+    list.appendChild(row);
+  });
+  document.querySelector("#add-chore").disabled = draft.chores.length >= 30;
+}
+
+function readChildren() {
+  const previous = draft.children;
+  draft.children = [...new Set(field("children").value.split(",").map(name => name.trim().slice(0, 35))
+    .filter(name => name && name !== "@default"))].slice(0, 12);
+  if (JSON.stringify(previous) !== JSON.stringify(draft.children)) drawChoreEditor();
+}
+
+function setupChoreEditor() {
+  assignmentWeek = "";
+  field("children").value = draft.children.join(", ");
+  const picker = field("assignmentWeek");
+  clear(picker);
+  const usual = elem("option", "Usual assignment");
+  usual.value = "";
+  picker.appendChild(usual);
+  for (let i = 0; i < 12; i++) {
+    const key = monday(dayKey, i);
+    const start = calendarDay(key);
+    const option = elem("option", shortFormat.format(start) + " – " + shortFormat.format(shift(start, 6)));
+    option.value = key;
+    picker.appendChild(option);
+  }
+  drawChoreEditor();
 }
 
 function field(name) {
   return form.elements.namedItem(name);
 }
 
-function openEditor() {
+function openEditor(section) {
   if (!settings) return;
   draft = JSON.parse(JSON.stringify(settings));
   const clock = draft.widgets.findIndex(widget => widget.id === "clock");
   draft.widgets.unshift(draft.widgets.splice(clock, 1)[0]);
   drawEditor();
-  ["nightStart", "nightEnd", "calendarView", "font"].forEach(name => { field(name).value = draft[name]; });
+  ["nightStart", "nightEnd", "calendarView", "font", "appearance"].forEach(name => { field(name).value = draft[name]; });
   Object.keys(draft.refresh).forEach(name => { field(name).value = draft.refresh[name]; });
   field("photo").checked = draft.photo;
-  field("reminders").value = draft.reminders.join("\n");
+  field("notes").value = draft.notes;
+  field("countdowns").value = draft.countdowns.map(item => item.date + " | " + item.title).join("\n");
+  setupChoreEditor();
   field("key").value = "";
   document.querySelector("#save-status").textContent = "";
   editor.hidden = false;
-  document.querySelector("#close-settings").focus();
+  editor.scrollTop = 0;
+  if (section === "chores") {
+    document.querySelector("#chores-settings").scrollIntoView({block: "start"});
+    field("children").focus({preventScroll: true});
+  } else {
+    document.querySelector("#close-settings").focus();
+  }
 }
 
 function closeEditor() {
@@ -643,11 +938,30 @@ function closeEditor() {
   tick();
 }
 
+field("children").onchange = readChildren;
+field("assignmentWeek").onchange = () => {
+  assignmentWeek = field("assignmentWeek").value;
+  drawChoreEditor();
+};
+document.querySelector("#add-chore").onclick = () => {
+  if (draft.chores.length >= 30) return;
+  const id = "chore-" + Array.from(crypto.getRandomValues(new Uint32Array(2)), n => n.toString(36)).join("-");
+  draft.chores.push({id, title: "", due: "Weekly", assignee: ""});
+  drawChoreEditor();
+  document.querySelector("#chore-settings-list .chore-editor-row:last-child input").focus();
+};
+
 form.addEventListener("submit", event => {
   event.preventDefault();
-  ["nightStart", "nightEnd", "calendarView", "font"].forEach(name => { draft[name] = field(name).value; });
+  ["nightStart", "nightEnd", "calendarView", "font", "appearance"].forEach(name => { draft[name] = field(name).value; });
   Object.keys(draft.refresh).forEach(name => { draft.refresh[name] = Number(field(name).value); });
-  draft.reminders = field("reminders").value.split("\n");
+  readChildren();
+  draft.notes = field("notes").value;
+  draft.countdowns = field("countdowns").value.split("\n").filter(line => line.trim()).map(line => {
+    const divider = line.indexOf("|");
+    return divider < 0 ? {date: "", title: line.trim()} :
+      {date: line.slice(0, divider).trim(), title: line.slice(divider + 1).trim()};
+  });
   draft.photo = field("photo").checked;
   const status = document.querySelector("#save-status");
   const save = document.querySelector("#save-settings");

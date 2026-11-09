@@ -11,8 +11,8 @@
   <link rel="apple-touch-icon" href="/icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/fonts.css">
-  <link rel="stylesheet" href="/style.css?v=2">
-  <script defer src="/app.js?v=2"></script>
+  <link rel="stylesheet" href="/style.css?v=3">
+  <script defer src="/app.js?v=3"></script>
 </head>
 <body>
   <div id="scenery" aria-hidden="true"></div>
@@ -44,11 +44,15 @@
     <section id="editor-panel" role="dialog" aria-modal="true" aria-labelledby="editor-title">
       <form id="editor-form">
         <header class="edit-head"><div><p class="eyebrow">YOUR WALLBOARD</p><h2 id="editor-title">Customize display</h2></div><button id="close-settings" type="button" aria-label="Close settings">✕</button></header>
-        <p class="edit-copy">Set the order, size and visibility of each card. Saved changes apply to every display.</p>
+        <p class="edit-copy">Choose which widgets appear, set their widths, and arrange them. Saved changes apply to every display.</p>
+        <h3>On the dashboard</h3>
         <div id="widget-settings"></div>
+        <h3>Available widgets</h3>
+        <div id="widget-catalog"></div>
         <div class="form-grid">
           <label>Display font<select name="font"><option value="System">Dashboard default</option><option>Inter</option><option>Manrope</option><option>DM Sans</option><option>Outfit</option><option>Plus Jakarta Sans</option><option>Lora</option><option>Merriweather</option><option>Playfair Display</option><option>Libre Baskerville</option><option>Source Serif 4</option></select></label>
           <label>Calendar view<select name="calendarView"><option value="month">Month</option><option value="week">Week</option></select></label>
+          <label>Appearance<select name="appearance"><option value="auto">Auto · Sunrise and sunset</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
           <label>Night starts<input name="nightStart" type="time" required></label>
           <label>Night ends<input name="nightEnd" type="time" required></label>
           <label>Calendar refresh (min)<input name="calendar" type="number" min="1" max="1440" required></label>
@@ -57,7 +61,16 @@
           <label>Photo rotation (min)<input name="rotation" type="number" min="1" max="1440" required></label>
           <label class="check"><input name="photo" type="checkbox"> Show photo background</label>
         </div>
-        <label>Household reminders <small>One per line</small><textarea name="reminders" rows="4" placeholder="Put recycling out Tuesday night"></textarea></label>
+        <section id="chores-settings">
+          <h3>Reminders and assignments</h3>
+          <label>Children <small>Separate names with commas</small><input name="children" placeholder="Add children’s names"></label>
+          <label>Assignment week<select name="assignmentWeek"></select></label>
+          <p class="edit-copy">Set the usual assignee, or choose a week to override that assignment. Daily chores reset each day. Other chores reset on Monday.</p>
+          <div id="chore-settings-list"></div>
+          <button type="button" id="add-chore">Add chore</button>
+        </section>
+        <label>Household note<textarea name="notes" rows="2" maxlength="600"></textarea></label>
+        <label>Countdowns <small>One per line, as YYYY-MM-DD | Event name</small><textarea name="countdowns" rows="3"></textarea></label>
         <label>Four-digit edit PIN<input name="key" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
         <p id="save-status" role="status"></p>
         <div class="edit-actions"><button id="cancel-settings" type="button">Cancel</button><button id="save-settings" type="submit">Save changes</button></div>
