@@ -48,6 +48,13 @@ const shortFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "
 let settings;
 let draft;
 let anchor;
+const weekDaysStorageKey = "wallboard.weekDays";
+let weekDays = 7;
+try {
+  if (localStorage.getItem(weekDaysStorageKey) === "4") weekDays = 4;
+} catch (_) {
+  // The toggle still works for this session if storage is unavailable.
+}
 let dayKey = "";
 let lastMinute = "";
 let lastNight = false;
@@ -169,33 +176,61 @@ eventDialog.addEventListener("click", event => {
 
 function showCalendar(head, body) {
   const week = settings.calendarView === "week";
+  const four = week && weekDays === 4;
   const today = calendarDay(dayKey);
   const view = anchor || today;
-  const period = week ? shift(view, -view.getUTCDay()) :
+  const period = four ? today : week ? shift(view, -view.getUTCDay()) :
     new Date(Date.UTC(view.getUTCFullYear(), view.getUTCMonth(), 1));
   const first = week ? period : shift(period, -period.getUTCDay());
-  const last = week ? shift(period, 6) : shift(new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + 1, 1)), -1);
-  const slots = week ? 7 : Math.ceil(((last - first) / 86400000 + 1) / 7) * 7;
+  const last = week ? shift(period, weekDays - 1) :
+    shift(new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + 1, 1)), -1);
+  const slots = week ? weekDays : Math.ceil(((last - first) / 86400000 + 1) / 7) * 7;
   const title = week ? shortFormat.format(period) + " – " + shortFormat.format(last) : monthFormat.format(period);
   const caption = elem("div", undefined, "calendar-caption");
   caption.appendChild(elem("p", title, "month-title"));
   head.appendChild(caption);
-  const nav = elem("div", undefined, "month-nav");
-  const current = week ? shift(today, -today.getUTCDay()) :
-    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const todayButton = button("Today", "Return to today", () => { anchor = null; renderCard("calendar"); });
-  todayButton.hidden = +current === +period;
-  nav.appendChild(todayButton);
-  [-1, 1].forEach(direction => {
-    const target = week ? shift(period, 7 * direction) :
-      new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + direction, 1));
-    const control = button(direction < 0 ? "‹" : "›", (direction < 0 ? "Previous " : "Next ") + (week ? "week" : "month"),
-      () => { anchor = target; renderCard("calendar"); });
-    control.disabled = Math.abs(target - today) > 65 * 86400000;
-    nav.appendChild(control);
-  });
-  head.appendChild(nav);
-  const grid = elem("div", undefined, week ? "grid week" : "grid month");
+  const controls = elem("div", undefined, "calendar-controls");
+  if (week) {
+    const range = elem("div", undefined, "calendar-range");
+    range.setAttribute("role", "group");
+    range.setAttribute("aria-label", "Calendar days shown");
+    [[4, "4 days"], [7, "Full week"]].forEach(([count, label]) => {
+      const control = button(label, label, () => {
+        if (weekDays === count) return;
+        weekDays = count;
+        try { localStorage.setItem(weekDaysStorageKey, String(count)); } catch (_) {}
+        renderCard("calendar");
+        head.querySelector('.calendar-range [aria-pressed="true"]').focus({preventScroll: true});
+      });
+      control.setAttribute("aria-pressed", String(weekDays === count));
+      range.appendChild(control);
+    });
+    controls.appendChild(range);
+  }
+  if (!four) {
+    const nav = elem("div", undefined, "month-nav");
+    const current = week ? shift(today, -today.getUTCDay()) :
+      new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const todayButton = button("Today", "Return to today", () => { anchor = null; renderCard("calendar"); });
+    todayButton.hidden = +current === +period;
+    nav.appendChild(todayButton);
+    [-1, 1].forEach(direction => {
+      const target = week ? shift(period, 7 * direction) :
+        new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + direction, 1));
+      const label = (direction < 0 ? "Previous " : "Next ") + (week ? "week" : "month");
+      const control = button(direction < 0 ? "‹" : "›", label, () => {
+        anchor = target;
+        renderCard("calendar");
+        const replacement = head.querySelector('[aria-label="' + label + '"]');
+        if (!replacement.disabled) replacement.focus({preventScroll: true});
+      });
+      control.disabled = Math.abs(target - today) > 65 * 86400000;
+      nav.appendChild(control);
+    });
+    controls.appendChild(nav);
+  }
+  head.appendChild(controls);
+  const grid = elem("div", undefined, four ? "grid week four-day" : week ? "grid week" : "grid month");
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   if (!week) weekdays.forEach(d => grid.appendChild(elem("div", d, "weekday")));
   const events = data.calendar ? data.calendar.data : [];

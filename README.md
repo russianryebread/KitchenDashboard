@@ -4,6 +4,8 @@ The wallboard runs on the home network at **http://192.168.1.184:8765/**. Open i
 
 The live dashboard includes weather for 80550, a month or week calendar, Next Up, Daylight, weekly household reminders, and a local 41-verse King James Version rotation. The daily verse changes at midnight in America/Denver. Auto appearance switches the dashboard between light and dark at the local sunrise and sunset. If daylight data is unavailable, it uses 6:30 a.m. and 6 p.m. The separate dim clock-only display defaults to 10 p.m.–5 a.m. The moon icon previews night mode, and the round arrow fetches fresh dashboard data. Show dashboard overrides the night schedule for five minutes.
 
+In week view, **4 days** shows today and the next three days. **Full week** shows Sunday through Saturday and includes the previous and next week arrows. The display remembers its choice on that device. Tap an event in either view for details.
+
 ## Customize
 
 Set the PIN in **data/sources.json** using a quoted value such as **"edit_pin": "0427"**. Quoting it preserves leading zeroes. The dashboard reads it on each save, so there is no need to restart. Run the following in this directory on the host to show the current PIN.

@@ -414,3 +414,30 @@ body.theme-dark:not(.no-photo) #scenery { background-image: linear-gradient(#111
 }
 #event-detail dt, #event-detail-time { color: var(--detail-muted); font-size: 13px; }
 #event-detail dd { margin: 0; display: grid; gap: 3px; overflow-wrap: anywhere; white-space: pre-line; }
+
+.grid.week.four-day { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.card-calendar .card-head { flex-wrap: wrap; }
+.calendar-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; }
+.calendar-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--day-rule);
+  border-radius: 5px;
+  background: var(--day-head);
+}
+.calendar-range button {
+  padding: 3px 8px;
+  min-height: 25px;
+  border: 0;
+  color: var(--calendar-ink);
+  background: transparent;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.calendar-range button[aria-pressed="true"] { color: var(--today-ink); background: var(--today-head); }
+@media (pointer: coarse) {
+  .calendar-range button, .month-nav button { min-height: 40px; }
+  .month-nav button { min-width: 40px; }
+}
